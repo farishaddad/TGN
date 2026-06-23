@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TGN Fraud Detection Learning App</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #e6edf3; }
+.slide { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 60px 80px; border-bottom: 1px solid #21262d; position: relative; }
+.slide:nth-child(even) { background: #161b22; }
+h1 { font-size: 3.2em; margin-bottom: 20px; background: linear-gradient(135deg, #58a6ff, #3fb950); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+h2 { font-size: 2.4em; margin-bottom: 30px; color: #58a6ff; }
+h3 { font-size: 1.6em; margin-bottom: 15px; color: #79c0ff; }
+p, li { font-size: 1.2em; line-height: 1.8; color: #c9d1d9; }
+ul { list-style: none; padding-left: 0; }
+ul li { padding: 8px 0; padding-left: 30px; position: relative; }
+ul li::before { content: ""; position: absolute; left: 0; top: 16px; width: 12px; height: 12px; background: #3fb950; border-radius: 50%; }
+.subtitle { font-size: 1.5em; color: #8b949e; margin-bottom: 40px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 30px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 30px; margin-top: 30px; }
+.card { background: #21262d; border: 1px solid #30363d; border-radius: 12px; padding: 30px; }
+.card h3 { margin-bottom: 12px; }
+.card p { font-size: 1em; color: #8b949e; }
+code { background: #1f2937; padding: 3px 8px; border-radius: 4px; font-family: 'SF Mono', monospace; font-size: 0.9em; color: #79c0ff; }
+pre { background: #1f2937; padding: 24px; border-radius: 12px; overflow-x: auto; margin: 20px 0; border: 1px solid #30363d; }
+pre code { padding: 0; font-size: 0.85em; color: #e6edf3; display: block; line-height: 1.6; }
+.badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.85em; font-weight: 600; margin-right: 8px; margin-bottom: 8px; }
+.badge-green { background: #1a4731; color: #3fb950; border: 1px solid #238636; }
+.badge-blue { background: #0c2d6b; color: #58a6ff; border: 1px solid #1f6feb; }
+.badge-purple { background: #2d1b4e; color: #bc8cff; border: 1px solid #8b5cf6; }
+.badge-orange { background: #3d2200; color: #f0883e; border: 1px solid #d47616; }
+.badge-red { background: #3d0000; color: #f85149; border: 1px solid #da3633; }
+table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+th, td { padding: 14px 20px; text-align: left; border-bottom: 1px solid #30363d; }
+th { color: #58a6ff; font-weight: 600; background: #161b22; }
+td { color: #c9d1d9; }
+tr:hover td { background: #1c2128; }
+.arch-box { background: #0d1117; border: 2px solid #30363d; border-radius: 12px; padding: 30px; font-family: 'SF Mono', monospace; font-size: 0.9em; line-height: 2; color: #8b949e; white-space: pre; }
+.highlight { color: #3fb950; font-weight: bold; }
+.stat-row { display: flex; gap: 30px; margin: 30px 0; }
+.stat { text-align: center; }
+.stat-num { font-size: 3em; font-weight: 700; color: #58a6ff; }
+.stat-label { font-size: 0.95em; color: #8b949e; margin-top: 5px; }
+.tier-table td:nth-child(1) { font-family: monospace; }
+.slide-num { position: absolute; bottom: 30px; right: 40px; font-size: 0.9em; color: #484f58; }
+.flow-arrow { color: #3fb950; font-size: 1.4em; margin: 0 10px; }
+nav { position: fixed; top: 0; right: 0; background: #161b22; border-bottom-left-radius: 8px; padding: 10px 20px; z-index: 1000; font-size: 0.85em; border: 1px solid #30363d; }
+nav a { color: #58a6ff; text-decoration: none; margin: 0 8px; }
+nav a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<nav>
+<a href="#title">Start</a>
+<a href="#problem">Problem</a>
+<a href="#arch">Architecture</a>
+<a href="#app">App</a>
+<a href="#scripts">Scripts</a>
+<a href="#mint">MiNT</a>
+<a href="#start">Get Started</a>
+</nav>
+
+<!-- Slide 1: Title -->
+<div class="slide" id="title">
+<h1>TGN Fraud Detection<br>Learning App</h1>
+<p class="subtitle">Hands-on Temporal Graph Networks for fraud detection teams</p>
+<div style="margin-top: 40px;">
+<span class="badge badge-green">PyTorch</span>
+<span class="badge badge-blue">PyG</span>
+<span class="badge badge-purple">Streamlit</span>
+<span class="badge badge-orange">108 Tests</span>
+<span class="badge badge-green">Self-Contained</span>
+</div>
+<div class="stat-row">
+<div class="stat"><div class="stat-num">6</div><div class="stat-label">Learning Scripts</div></div>
+<div class="stat"><div class="stat-num">5</div><div class="stat-label">App Pages</div></div>
+<div class="stat"><div class="stat-num">8</div><div class="stat-label">Fraud Patterns</div></div>
+<div class="stat"><div class="stat-num">108</div><div class="stat-label">Tests Passing</div></div>
+</div>
+<div class="slide-num">1</div>
+</div>
+
+<!-- Slide 2: Problem -->
+<div class="slide" id="problem">
+<h2>The Problem</h2>
+<div class="grid">
+<div>
+<h3>Traditional Fraud Detection</h3>
+<ul>
+<li>Rule-based systems with static thresholds</li>
+<li>Tabular ML ignores transaction sequences</li>
+<li>No memory of account behavior over time</li>
+<li>Can't detect evolving fraud patterns</li>
+<li>Each network trained independently</li>
+</ul>
+</div>
+<div>
+<h3>TGN Approach</h3>
+<ul>
+<li>Learns temporal patterns from transaction graphs</li>
+<li>Per-node memory tracks behavioral history</li>
+<li>Graph attention weighs relevant neighbors</li>
+<li>Updates in real-time during inference</li>
+<li>Transfer learning across multiple networks</li>
+</ul>
+</div>
+</div>
+<div class="slide-num">2</div>
+</div>
+
+<!-- Slide 3: Architecture -->
+<div class="slide" id="arch">
+<h2>TGN Architecture</h2>
+<div class="arch-box">
+Input: (src_account, dst_merchant, timestamp, edge_features)
+                          |
+                          v
+    +---------------------------------------------+
+    |           <span class="highlight">TGN Fraud Detector</span>                |
+    |---------------------------------------------|
+    |  <span class="highlight">TGNMemory</span>                                  |
+    |  Per-node state vectors (64-dim)            |
+    |  Updated via GRU after each interaction     |
+    |       |                                     |
+    |       v                                     |
+    |  <span class="highlight">GraphAttentionEmbedding</span>                   |
+    |  TransformerConv (2 heads, edge features)   |
+    |       |                                     |
+    |       +---> <span class="highlight">LinkPredictor</span>  (transaction)   |
+    |       +---> <span class="highlight">NodeClassifier</span> (account)       |
+    +---------------------------------------------+
+                          |
+                          v
+    Output: risk_score [0,1] + risk_tier (LOW/MED/HIGH/CRIT)
+</div>
+<div class="slide-num">3</div>
+</div>
+
+<!-- Slide 4: Components -->
+<div class="slide">
+<h2>Model Components</h2>
+<div class="grid-3">
+<div class="card">
+<h3>TimeEncoder</h3>
+<p>Learnable Fourier encoding. Maps timestamps to 32-dim vectors spanning seconds to years.</p>
+</div>
+<div class="card">
+<h3>TGNMemory</h3>
+<p>Per-node GRU state. Each node remembers its interaction history without explicit feature engineering.</p>
+</div>
+<div class="card">
+<h3>GraphAttention</h3>
+<p>Multi-head TransformerConv. Aggregates neighbor info weighted by relevance and recency.</p>
+</div>
+<div class="card">
+<h3>LinkPredictor</h3>
+<p>MLP scoring head. Scores each transaction for anomaly: "Is this edge suspicious?"</p>
+</div>
+<div class="card">
+<h3>NodeClassifier</h3>
+<p>MLP classification head. Scores each account for risk: "Is this node fraudulent?"</p>
+</div>
+<div class="card">
+<h3>Combined Loss</h3>
+<p>0.5 * contrastive (link) + 0.5 * supervised (node). Learns structure AND behavior.</p>
+</div>
+</div>
+<div class="slide-num">4</div>
+</div>
+
+<!-- Slide 5: Generators -->
+<div class="slide">
+<h2>Synthetic Fraud Generators</h2>
+<div class="grid">
+<div>
+<h3>BankSim (5 patterns)</h3>
+<table>
+<tr><td>Account Takeover</td><td>Burst of high-value transactions</td></tr>
+<tr><td>Card Testing</td><td>Rapid tiny amounts ($0.01-$5)</td></tr>
+<tr><td>Money Laundering</td><td>Layered transfers through intermediaries</td></tr>
+<tr><td>Synthetic Identity</td><td>New account, immediate large purchases</td></tr>
+<tr><td>Bust Out</td><td>Build history, then max out</td></tr>
+</table>
+</div>
+<div>
+<h3>PaySim (3 patterns)</h3>
+<table>
+<tr><td>Money Mule</td><td>Rapid fund forwarding chains</td></tr>
+<tr><td>Structuring</td><td>Split amounts below $10K threshold</td></tr>
+<tr><td>Account Drainage</td><td>Compromised account emptied fast</td></tr>
+</table>
+<p style="margin-top: 20px; font-size: 0.95em;">Configurable: accounts, merchants, transactions, fraud rate, seed. Fully deterministic and reproducible.</p>
+</div>
+</div>
+<div class="slide-num">5</div>
+</div>
+
+<!-- Slide 6: Streamlit App -->
+<div class="slide" id="app">
+<h2>Interactive Streamlit App</h2>
+<p class="subtitle">5 pages for the full explore-train-score workflow</p>
+<div class="grid-3" style="margin-top: 40px;">
+<div class="card">
+<h3>1. Generate Data</h3>
+<p>Choose generator, configure fraud rate, select patterns. See temporal + amount distribution charts. One-click Quick Start.</p>
+</div>
+<div class="card">
+<h3>2. Explore Graph</h3>
+<p>Interactive Plotly visualization. Filter by time, node type. Fraud edges in red. Click nodes for details.</p>
+</div>
+<div class="card">
+<h3>3. Train Model</h3>
+<p>Configure epochs, LR, dimensions. Live loss + AUC-PR chart. Early stopping. Final metrics table.</p>
+</div>
+<div class="card">
+<h3>4. Score Transactions</h3>
+<p>Manual input or batch scoring. Color-coded risk tier badges. Confidence bounds. Score gauge.</p>
+</div>
+<div class="card">
+<h3>5. Upload CSV</h3>
+<p>Bring your own data. Schema validation, date parsing, feature encoding. Sample CSV download.</p>
+</div>
+<div class="card" style="border-color: #3fb950;">
+<h3>Session Flow</h3>
+<p>Generate &rarr; Explore &rarr; Train &rarr; Score. All connected via session state.</p>
+</div>
+</div>
+<div class="slide-num">6</div>
+</div>
+
+<!-- Slide 7: Risk Tiers -->
+<div class="slide">
+<h2>Risk Tier System</h2>
+<table class="tier-table" style="max-width: 700px;">
+<tr><th>Score Range</th><th>Tier</th><th>Action</th><th>Color</th></tr>
+<tr><td>0.00 - 0.30</td><td><span class="badge badge-green">LOW</span></td><td>Allow automatically</td><td style="color:#3fb950;">&#9679;</td></tr>
+<tr><td>0.30 - 0.60</td><td><span class="badge badge-orange">MEDIUM</span></td><td>Flag for review</td><td style="color:#f0883e;">&#9679;</td></tr>
+<tr><td>0.60 - 0.85</td><td><span class="badge badge-red">HIGH</span></td><td>Hold for investigation</td><td style="color:#f85149;">&#9679;</td></tr>
+<tr><td>0.85 - 1.00</td><td><span class="badge" style="background:#4a0000;color:#ff7b72;border:1px solid #f85149;">CRITICAL</span></td><td>Block immediately</td><td style="color:#ff7b72;">&#9679;</td></tr>
+</table>
+<div style="margin-top: 40px;">
+<h3>Score Calibration</h3>
+<p>Raw model outputs are calibrated via isotonic regression on validation data.<br>
+A calibrated score of 0.7 means approximately 70% true probability of fraud.</p>
+</div>
+<div class="slide-num">7</div>
+</div>
+
+<!-- Slide 8: Learning Scripts -->
+<div class="slide" id="scripts">
+<h2>Progressive Learning Scripts</h2>
+<p class="subtitle">6 self-contained scripts, each building on the previous</p>
+<table style="margin-top: 30px;">
+<tr><th>#</th><th>Script</th><th>What You Learn</th></tr>
+<tr><td>01</td><td><code>data_generation.py</code></td><td>Synthetic generators, fraud patterns, reproducibility</td></tr>
+<tr><td>02</td><td><code>graph_construction.py</code></td><td>Node/Edge/Graph model, PyG conversion, temporal splits</td></tr>
+<tr><td>03</td><td><code>tgn_architecture.py</code></td><td>Memory, time encoding, attention, scoring heads</td></tr>
+<tr><td>04</td><td><code>training_loop.py</code></td><td>Combined loss, class weighting, AUC-PR, early stopping</td></tr>
+<tr><td>05</td><td><code>inference_scoring.py</code></td><td>Scorer API, calibration, risk tiers, confidence</td></tr>
+<tr><td>06</td><td><code>mint_transfer.py</code></td><td>Multi-network training, zero-shot transfer, fine-tuning</td></tr>
+</table>
+<pre><code># Run any script independently:
+python learn/01_data_generation.py
+
+# Or run all sequentially:
+make learn</code></pre>
+<div class="slide-num">8</div>
+</div>
+
+<!-- Slide 9: MiNT -->
+<div class="slide" id="mint">
+<h2>MiNT: Multi-Network Transfer Learning</h2>
+<div class="grid">
+<div>
+<h3>Key Insight</h3>
+<p>Fraud patterns are universal across networks. Card testing, account takeover, and layered laundering look the same whether it's a bank, mobile money, or crypto network.</p>
+<h3 style="margin-top: 30px;">Pipeline</h3>
+<ul>
+<li>Generate 5 training networks (varied seeds/generators)</li>
+<li>Train shared model with gradient accumulation</li>
+<li>Zero-shot evaluate on 2 unseen networks</li>
+<li>Fine-tune: freeze backbone, retrain heads</li>
+<li>Compare against single-network baselines</li>
+</ul>
+</div>
+<div>
+<h3>Fine-Tuning Strategy</h3>
+<div class="card" style="margin-top: 0;">
+<p><strong>Frozen:</strong> TGNMemory + GraphAttentionEmbedding<br>
+<strong>Trainable:</strong> LinkPredictor + NodeClassifier<br>
+<strong>LR:</strong> 10x lower than pre-training<br>
+<strong>Epochs:</strong> 5 (vs 10 for pre-training)</p>
+</div>
+<h3 style="margin-top: 30px;">Expected Outcome</h3>
+<p>Fine-tuned MiNT model outperforms models trained from scratch on individual networks, demonstrating positive transfer of fraud detection capabilities.</p>
+</div>
+</div>
+<div class="slide-num">9</div>
+</div>
+
+<!-- Slide 10: Training Details -->
+<div class="slide">
+<h2>Training Pipeline</h2>
+<div class="grid">
+<div>
+<h3>Combined Loss</h3>
+<pre><code>loss = 0.5 * link_loss + 0.5 * node_loss
+
+# Link loss (contrastive):
+# Real edges score higher than random negatives
+link_loss = BCE(pos_score, 1) + BCE(neg_score, 0)
+
+# Node loss (supervised, class-weighted):
+# Weighted BCE handles 95:5 imbalance
+pos_weight = n_neg / n_pos  # Auto-computed
+node_loss = BCE(node_score, label, pos_weight)</code></pre>
+</div>
+<div>
+<h3>Key Design Choices</h3>
+<ul>
+<li>Temporal split (70/15/15) prevents future leakage</li>
+<li>AUC-PR as primary metric (not accuracy)</li>
+<li>Early stopping on validation AUC-PR</li>
+<li>Gradient clipping (max_norm=1.0)</li>
+<li>Memory detach between batches</li>
+<li>Checkpoint save on improvement</li>
+</ul>
+</div>
+</div>
+<div class="slide-num">10</div>
+</div>
+
+<!-- Slide 11: CSV Ingestion -->
+<div class="slide">
+<h2>Bring Your Own Data</h2>
+<div class="grid">
+<div>
+<h3>CSV Schema</h3>
+<table>
+<tr><th>Column</th><th>Required</th><th>Description</th></tr>
+<tr><td><code>source_id</code></td><td>Yes</td><td>Account/entity initiating</td></tr>
+<tr><td><code>target_id</code></td><td>Yes</td><td>Recipient account/merchant</td></tr>
+<tr><td><code>timestamp</code></td><td>Yes</td><td>Unix epoch or ISO datetime</td></tr>
+<tr><td><code>amount</code></td><td>Yes</td><td>Transaction amount</td></tr>
+<tr><td><code>label</code></td><td>No</td><td>0=legit, 1=fraud</td></tr>
+<tr><td><code>channel</code></td><td>No</td><td>pos/online/transfer/atm</td></tr>
+</table>
+</div>
+<div>
+<h3>What CSVIngester Does</h3>
+<ul>
+<li>Validates required columns exist</li>
+<li>Parses multiple date formats (Unix, ISO, mixed)</li>
+<li>Maps string IDs to integer node IDs</li>
+<li>Creates account/merchant node types</li>
+<li>Encodes features (log_amount, time cyclical, channel)</li>
+<li>Handles missing values gracefully</li>
+<li>Reports summary + warnings</li>
+</ul>
+</div>
+</div>
+<div class="slide-num">11</div>
+</div>
+
+<!-- Slide 12: Get Started -->
+<div class="slide" id="start">
+<h2>Get Started in 3 Commands</h2>
+<pre><code># 1. Setup
+cd ~/Documents/TGN && python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
+
+# 2. Launch interactive app
+streamlit run app/main.py
+
+# 3. Or start with learning scripts
+python learn/01_data_generation.py</code></pre>
+
+<div class="grid" style="margin-top: 50px;">
+<div>
+<h3>Useful Commands</h3>
+<pre><code>make app       # Launch Streamlit
+make test      # Run 108 tests
+make learn     # All 6 scripts
+make train     # Quick training demo
+make generate  # Generate data CLI</code></pre>
+</div>
+<div>
+<h3>Project Stats</h3>
+<div class="stat-row" style="flex-wrap: wrap;">
+<div class="stat"><div class="stat-num" style="font-size:2em;">108</div><div class="stat-label">Tests Passing</div></div>
+<div class="stat"><div class="stat-num" style="font-size:2em;">~3K</div><div class="stat-label">Lines of Code</div></div>
+<div class="stat"><div class="stat-num" style="font-size:2em;">0</div><div class="stat-label">External Data Required</div></div>
+</div>
+</div>
+</div>
+<div class="slide-num">12</div>
+</div>
+
+</body>
+</html>
