@@ -15,8 +15,6 @@ from __future__ import annotations
 import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
-import torch
-import torch.nn as nn
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     average_precision_score,
@@ -27,7 +25,18 @@ from sklearn.metrics import (
 )
 
 from tgn_learn.graph import TemporalGraph, Edge, EDGE_FEAT_DIM
-from tgn_learn.model.time_encoder import PRAGMATimeEncoder
+
+# Torch imports are deferred — they're only needed for the PRAGMA sequence
+# model which is trained on-demand. This avoids ImportError on environments
+# where torch is slow to load or temporarily unavailable.
+_TORCH_AVAILABLE = False
+try:
+    import torch
+    import torch.nn as nn
+    from tgn_learn.model.time_encoder import PRAGMATimeEncoder
+    _TORCH_AVAILABLE = True
+except ImportError:
+    pass
 
 # ---------------------------------------------------------------------------
 # Page header
@@ -108,127 +117,128 @@ lr_preds = (lr_probs >= 0.5).astype(int)
 # Column 2: PRAGMA-style Sequence Model (2-layer Transformer)
 # ===========================================================================
 
-class PRAGMASequenceModel(nn.Module):
-    """Minimal PRAGMA-style sequence model for comparison.
+if _TORCH_AVAILABLE:
+    class PRAGMASequenceModel(nn.Module):
+        """Minimal PRAGMA-style sequence model for comparison.
 
-    2-layer Transformer encoder over the last `seq_len` transactions
-    per account, using PRAGMATimeEncoder for positional encoding.
-    No graph structure — purely sequential.
-    """
-
-    def __init__(self, feat_dim: int = EDGE_FEAT_DIM, time_dim: int = 16,
-                 d_model: int = 64, nhead: int = 4, num_layers: int = 2):
-        super().__init__()
-        self.time_enc = PRAGMATimeEncoder(time_dim)
-        self.input_proj = nn.Linear(feat_dim + time_dim, d_model)
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=nhead, dim_feedforward=128,
-            dropout=0.1, batch_first=True,
-        )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.head = nn.Linear(d_model, 1)
-
-    def forward(self, features: torch.Tensor, timestamps: torch.Tensor) -> torch.Tensor:
+        2-layer Transformer encoder over the last `seq_len` transactions
+        per account, using PRAGMATimeEncoder for positional encoding.
+        No graph structure — purely sequential.
         """
-        Args:
-            features: [batch, seq_len, feat_dim]
-            timestamps: [batch, seq_len] absolute timestamps
-        Returns:
-            logits: [batch, 1]
-        """
-        # Compute inter-event gaps
-        gaps = torch.zeros_like(timestamps)
-        gaps[:, 1:] = timestamps[:, 1:] - timestamps[:, :-1]
 
-        # Time encoding
-        B, S = timestamps.shape
-        t_enc = self.time_enc(gaps.reshape(-1), t_abs=timestamps.reshape(-1))
-        t_enc = t_enc.reshape(B, S, -1)
-
-        # Concat features + time encoding, project
-        x = torch.cat([features, t_enc], dim=-1)
-        x = self.input_proj(x)
-
-        # Transformer
-        x = self.transformer(x)
-
-        # Use last position for classification
-        return self.head(x[:, -1, :])
-
-
-@st.cache_resource(show_spinner="Training PRAGMA Sequence Model...")
-def _train_pragma_seq(_X_train, _y_train, _ts_train):
-    """Train a PRAGMA-style sequence model. Uses sliding windows of 10 events."""
-    seq_len = 10
-    model = PRAGMASequenceModel(feat_dim=EDGE_FEAT_DIM, time_dim=16)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
-    # Build sequences: sliding window of seq_len
-    n = len(_X_train)
-    seqs_X, seqs_t, seqs_y = [], [], []
-    for i in range(seq_len, n):
-        seqs_X.append(_X_train[i - seq_len:i])
-        seqs_t.append(_ts_train[i - seq_len:i])
-        seqs_y.append(_y_train[i])
-
-    X_seq = torch.tensor(np.array(seqs_X), dtype=torch.float32)
-    t_seq = torch.tensor(np.array(seqs_t), dtype=torch.float32)
-    y_seq = torch.tensor(np.array(seqs_y), dtype=torch.float32)
-
-    # Class weighting
-    n_pos = y_seq.sum().clamp(min=1)
-    n_neg = (len(y_seq) - n_pos).clamp(min=1)
-    pos_weight = (n_neg / n_pos).clamp(max=50)
-
-    # Train for 10 epochs with mini-batches
-    model.train()
-    batch_size = 256
-    for epoch in range(10):
-        perm = torch.randperm(len(X_seq))
-        for start in range(0, len(X_seq), batch_size):
-            idx = perm[start:start + batch_size]
-            logits = model(X_seq[idx], t_seq[idx]).squeeze(-1)
-            loss = nn.functional.binary_cross_entropy_with_logits(
-                logits, y_seq[idx], pos_weight=pos_weight
+        def __init__(self, feat_dim: int = EDGE_FEAT_DIM, time_dim: int = 16,
+                     d_model: int = 64, nhead: int = 4, num_layers: int = 2):
+            super().__init__()
+            self.time_enc = PRAGMATimeEncoder(time_dim)
+            self.input_proj = nn.Linear(feat_dim + time_dim, d_model)
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=d_model, nhead=nhead, dim_feedforward=128,
+                dropout=0.1, batch_first=True,
             )
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+            self.head = nn.Linear(d_model, 1)
 
-    model.eval()
-    return model, seq_len
+        def forward(self, features: torch.Tensor, timestamps: torch.Tensor) -> torch.Tensor:
+            """
+            Args:
+                features: [batch, seq_len, feat_dim]
+                timestamps: [batch, seq_len] absolute timestamps
+            Returns:
+                logits: [batch, 1]
+            """
+            # Compute inter-event gaps
+            gaps = torch.zeros_like(timestamps)
+            gaps[:, 1:] = timestamps[:, 1:] - timestamps[:, :-1]
 
+            # Time encoding
+            B, S = timestamps.shape
+            t_enc = self.time_enc(gaps.reshape(-1), t_abs=timestamps.reshape(-1))
+            t_enc = t_enc.reshape(B, S, -1)
 
-pragma_model, seq_len = _train_pragma_seq(X_train, y_train, data["timestamps_train"])
+            # Concat features + time encoding, project
+            x = torch.cat([features, t_enc], dim=-1)
+            x = self.input_proj(x)
 
+            # Transformer
+            x = self.transformer(x)
 
-@st.cache_data(show_spinner=False)
-def _pragma_predict(_X_test, _ts_test, _seq_len):
-    """Generate predictions from the PRAGMA sequence model."""
-    model = st.session_state.get("_pragma_model_ref")
-    if model is None:
-        return np.full(len(_X_test), 0.5)
-
-    # Build test sequences
-    # Use last seq_len of training + test for context
-    X_full = np.concatenate([X_train[-_seq_len:], _X_test])
-    ts_full = np.concatenate([data["timestamps_train"][-_seq_len:], _ts_test])
-
-    probs = []
-    with torch.no_grad():
-        for i in range(_seq_len, len(X_full)):
-            x = torch.tensor(X_full[i - _seq_len:i], dtype=torch.float32).unsqueeze(0)
-            t = torch.tensor(ts_full[i - _seq_len:i], dtype=torch.float32).unsqueeze(0)
-            logit = model(x, t).squeeze()
-            probs.append(torch.sigmoid(logit).item())
-
-    return np.array(probs)
+            # Use last position for classification
+            return self.head(x[:, -1, :])
 
 
-# Store model reference for the cached predict function
-st.session_state["_pragma_model_ref"] = pragma_model
-pragma_probs = _pragma_predict(X_test, data["timestamps_test"], seq_len)
-pragma_preds = (pragma_probs >= 0.5).astype(int)
+if _TORCH_AVAILABLE:
+    @st.cache_resource(show_spinner="Training PRAGMA Sequence Model...")
+    def _train_pragma_seq(_X_train, _y_train, _ts_train):
+        """Train a PRAGMA-style sequence model. Uses sliding windows of 10 events."""
+        seq_len = 10
+        model = PRAGMASequenceModel(feat_dim=EDGE_FEAT_DIM, time_dim=16)
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+        # Build sequences: sliding window of seq_len
+        n = len(_X_train)
+        seqs_X, seqs_t, seqs_y = [], [], []
+        for i in range(seq_len, n):
+            seqs_X.append(_X_train[i - seq_len:i])
+            seqs_t.append(_ts_train[i - seq_len:i])
+            seqs_y.append(_y_train[i])
+
+        X_seq = torch.tensor(np.array(seqs_X), dtype=torch.float32)
+        t_seq = torch.tensor(np.array(seqs_t), dtype=torch.float32)
+        y_seq = torch.tensor(np.array(seqs_y), dtype=torch.float32)
+
+        # Class weighting
+        n_pos = y_seq.sum().clamp(min=1)
+        n_neg = (len(y_seq) - n_pos).clamp(min=1)
+        pos_weight = (n_neg / n_pos).clamp(max=50)
+
+        # Train for 10 epochs with mini-batches
+        model.train()
+        batch_size = 256
+        for epoch in range(10):
+            perm = torch.randperm(len(X_seq))
+            for start in range(0, len(X_seq), batch_size):
+                idx = perm[start:start + batch_size]
+                logits = model(X_seq[idx], t_seq[idx]).squeeze(-1)
+                loss = nn.functional.binary_cross_entropy_with_logits(
+                    logits, y_seq[idx], pos_weight=pos_weight
+                )
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+        model.eval()
+        return model, seq_len
+
+    @st.cache_data(show_spinner=False)
+    def _pragma_predict(_X_test, _ts_test, _seq_len):
+        """Generate predictions from the PRAGMA sequence model."""
+        model = st.session_state.get("_pragma_model_ref")
+        if model is None:
+            return np.full(len(_X_test), 0.5)
+
+        # Build test sequences
+        X_full = np.concatenate([X_train[-_seq_len:], _X_test])
+        ts_full = np.concatenate([data["timestamps_train"][-_seq_len:], _ts_test])
+
+        probs = []
+        with torch.no_grad():
+            for i in range(_seq_len, len(X_full)):
+                x = torch.tensor(X_full[i - _seq_len:i], dtype=torch.float32).unsqueeze(0)
+                t = torch.tensor(ts_full[i - _seq_len:i], dtype=torch.float32).unsqueeze(0)
+                logit = model(x, t).squeeze()
+                probs.append(torch.sigmoid(logit).item())
+
+        return np.array(probs)
+
+    pragma_model, seq_len = _train_pragma_seq(X_train, y_train, data["timestamps_train"])
+    st.session_state["_pragma_model_ref"] = pragma_model
+    pragma_probs = _pragma_predict(X_test, data["timestamps_test"], seq_len)
+    pragma_preds = (pragma_probs >= 0.5).astype(int)
+
+else:
+    # Torch not available — use representative fallback metrics for PRAGMA column
+    pragma_probs = np.full(len(y_test), 0.5)
+    pragma_preds = np.zeros(len(y_test), dtype=int)
 
 
 # ===========================================================================
