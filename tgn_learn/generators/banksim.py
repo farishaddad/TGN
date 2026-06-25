@@ -133,6 +133,13 @@ class BankSimGenerator(BaseGenerator):
                 },
             ))
 
+        # --- IEEE-CIS heterogeneous attribute nodes ---
+        # Adds CardType, Address, EmailDomain, ProductType nodes to make
+        # the graph structure consistent with the AWS/GraphStorm benchmark.
+        # These are attribute nodes connected to accounts via metadata edges.
+        self._next_node_id = self.config.num_accounts + self.config.num_merchants
+        self._add_ieee_cis_attribute_nodes(graph, rng)
+
         # --- Generate legitimate transactions ---
         num_legit = int(self.config.num_transactions * (1 - self.config.fraud_rate))
         legit_edges = self._generate_legitimate(rng, num_legit)
@@ -357,6 +364,91 @@ class BankSimGenerator(BaseGenerator):
                 metadata={"pattern": "bust_out"},
             ))
         return edges
+
+    # ------------------------------------------------------------------
+    # IEEE-CIS heterogeneous attribute nodes
+    # ------------------------------------------------------------------
+
+    # IEEE-CIS node taxonomy (consistent with AWS GraphStorm benchmark)
+    IEEE_CIS_CARD_TYPES = ["visa_debit", "visa_credit", "mastercard_debit",
+                           "mastercard_credit", "amex", "discover"]
+    IEEE_CIS_ADDRESSES = ["domestic_urban", "domestic_rural", "international_eu",
+                          "international_apac", "international_other"]
+    IEEE_CIS_EMAIL_DOMAINS = ["gmail.com", "yahoo.com", "outlook.com", "protonmail.com",
+                              "corporate.co.uk", "icloud.com", "anonymous.org"]
+    IEEE_CIS_PRODUCT_TYPES = ["W", "H", "C", "S", "R"]  # IEEE-CIS ProductCD categories
+
+    def _add_ieee_cis_attribute_nodes(self, graph: TemporalGraph, rng: np.random.Generator) -> None:
+        """Add IEEE-CIS heterogeneous attribute nodes to the graph.
+
+        Creates CardType, Address, EmailDomain, and ProductType nodes,
+        making the graph structure consistent with the AWS/GraphStorm
+        fraud detection benchmark (IEEE-CIS dataset).
+
+        Each account is assigned a card type, address region, and email domain.
+        Each merchant is assigned a product type.
+
+        These attribute nodes enrich the heterogeneous graph for demonstration
+        but do not affect the existing edge generation or scoring logic.
+        """
+        nid = self._next_node_id
+
+        # --- CardType nodes ---
+        card_type_start = nid
+        for i, ct in enumerate(self.IEEE_CIS_CARD_TYPES):
+            graph.add_node(Node(
+                node_id=nid,
+                node_type="card_type",
+                metadata={"card_type": ct, "ieee_cis_category": "card"},
+            ))
+            nid += 1
+
+        # --- Address nodes ---
+        address_start = nid
+        for i, addr in enumerate(self.IEEE_CIS_ADDRESSES):
+            graph.add_node(Node(
+                node_id=nid,
+                node_type="address",
+                metadata={"address_region": addr, "ieee_cis_category": "addr"},
+            ))
+            nid += 1
+
+        # --- EmailDomain nodes ---
+        email_start = nid
+        for i, email in enumerate(self.IEEE_CIS_EMAIL_DOMAINS):
+            graph.add_node(Node(
+                node_id=nid,
+                node_type="email_domain",
+                metadata={"domain": email, "ieee_cis_category": "email"},
+            ))
+            nid += 1
+
+        # --- ProductType nodes ---
+        product_start = nid
+        for i, ptype in enumerate(self.IEEE_CIS_PRODUCT_TYPES):
+            graph.add_node(Node(
+                node_id=nid,
+                node_type="product_type",
+                metadata={"product_cd": ptype, "ieee_cis_category": "product"},
+            ))
+            nid += 1
+
+        # --- Assign attributes to accounts ---
+        for i in range(self.config.num_accounts):
+            node = graph.get_node(i)
+            if node is not None:
+                node.metadata["card_type_id"] = card_type_start + int(rng.integers(0, len(self.IEEE_CIS_CARD_TYPES)))
+                node.metadata["address_id"] = address_start + int(rng.integers(0, len(self.IEEE_CIS_ADDRESSES)))
+                node.metadata["email_domain_id"] = email_start + int(rng.integers(0, len(self.IEEE_CIS_EMAIL_DOMAINS)))
+
+        # --- Assign product types to merchants ---
+        for i in range(self.config.num_merchants):
+            mid = self.config.num_accounts + i
+            node = graph.get_node(mid)
+            if node is not None:
+                node.metadata["product_type_id"] = product_start + int(rng.integers(0, len(self.IEEE_CIS_PRODUCT_TYPES)))
+
+        self._next_node_id = nid
 
     # ------------------------------------------------------------------
     # Feature encoding helpers

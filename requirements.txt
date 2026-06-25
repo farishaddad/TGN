@@ -1,7 +1,10 @@
 # Streamlit Cloud deployment dependencies
+# The local tgn_learn package must be installed from the repo root.
+# -e . reads pyproject.toml and installs tgn_learn into the environment.
+.
+
 # Uses CPU-only PyTorch to avoid triton/CUDA wheels that don't exist
 # for Streamlit Cloud's environment.
-
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 torch>=2.1.0
