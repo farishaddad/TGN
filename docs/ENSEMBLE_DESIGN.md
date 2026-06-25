@@ -1,4 +1,74 @@
 # Ensemble TGN Fraud Detection — Design Document
+
+---
+
+## 0. Isolation Architecture — Demo Separation
+
+**The ensemble must be developed as a fully independent codebase alongside the original,
+not as modifications to it. The two systems must be demoable independently.**
+
+### Directory Structure
+
+```
+TGN/
+├── tgn_learn/              ← ORIGINAL — do not modify any existing file
+│   ├── model/
+│   ├── training/
+│   ├── scoring/
+│   └── ...
+│
+├── ensemble/               ← NEW PACKAGE — mirror structure, fully independent
+│   ├── __init__.py
+│   ├── model/              (DualTrackMemory, MultiScaleTimeEncoder, RFHead, etc.)
+│   ├── graphs/             (FundFlowDAG, DeviceEventGraph)
+│   ├── embedding/          (EmbeddingCache, BatchEmbedder, RTEmbedder)
+│   ├── detectors/          (BaseDetector + 5 implementations)
+│   ├── training/           (EnsembleTrainer, GraphSMOTE)
+│   ├── scoring/            (EnsembleScorer, EnsembleScoringResult)
+│   └── maintenance/        (DriftDetector, ThresholdAdapter)
+│
+├── app/
+│   ├── main.py             ← add mode selector (see below)
+│   ├── pages/              ← ORIGINAL pages — do not modify
+│   │   ├── 1_Generate_Data.py
+│   │   ├── 2_Explore_Graph.py
+│   │   ├── 3_Train_Model.py
+│   │   ├── 4_Score_Transactions.py
+│   │   └── 5_Upload_CSV.py
+│   └── ensemble_pages/     ← NEW — parallel pages for ensemble demo
+│       ├── 1_Generate_Data.py      (adds device/account event graphs)
+│       ├── 2_Explore_Graph.py      (adds multi-graph view)
+│       ├── 3_Train_Ensemble.py     (trains all detectors)
+│       ├── 4_Score_Transactions.py (shows detector breakdown + explainer)
+│       ├── 5_Upload_CSV.py         (same as original)
+│       ├── 6_Pattern_Visualiser.py (NEW)
+│       └── 7_Why_Ensemble.py       (NEW)
+└── docs/
+```
+
+### Mode Selector in app/main.py
+
+```python
+# app/main.py — add at the top before page routing
+mode = st.sidebar.radio(
+    "Demo Mode",
+    ["Standard TGN", "Ensemble TGN"],
+    help="Standard: original single-model TGN. Ensemble: multi-detector approach.",
+)
+st.session_state["demo_mode"] = mode
+
+# Route to correct page directory based on mode
+pages_dir = "app/ensemble_pages" if mode == "Ensemble TGN" else "app/pages"
+```
+
+### Key Rule for Kiro
+> `tgn_learn/` is read-only for ensemble work. All ensemble code lives in `ensemble/`.
+> The ensemble package imports FROM `tgn_learn` where reuse makes sense
+> (e.g. `from tgn_learn.graph import TemporalGraph, Edge`) but never modifies it.
+> No file under `tgn_learn/` or `app/pages/` is changed during ensemble development.
+
+---
+
 **Target codebase:** `/Users/fahaddad/Documents/TGN`
 **Agent:** Kiro
 **Research basis:** 18 research papers reviewed June 2026
