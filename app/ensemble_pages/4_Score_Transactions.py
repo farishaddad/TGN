@@ -44,37 +44,33 @@ st.subheader("Transaction Input")
 
 col_input, col_presets = st.columns([3, 2])
 
+# Defaults dict for presets (avoids writing directly to widget keys)
+if "ens_defaults" not in st.session_state:
+    st.session_state["ens_defaults"] = {
+        "src": 7, "dst": 50, "amt": 2400.0, "ts": 1700050000.0,
+    }
+
+defaults = st.session_state["ens_defaults"]
+
 with col_input:
-    src_id = st.number_input("Source Account", min_value=0, value=7, key="ens_src")
-    dst_id = st.number_input("Destination", min_value=0, value=50, key="ens_dst")
-    amount = st.number_input("Amount (£)", min_value=0.01, value=2400.0, key="ens_amt")
-    timestamp = st.number_input("Timestamp", value=1700050000.0, key="ens_ts")
+    src_id = st.number_input("Source Account", min_value=0, value=defaults["src"], key="ens_src")
+    dst_id = st.number_input("Destination", min_value=0, value=defaults["dst"], key="ens_dst")
+    amount = st.number_input("Amount (£)", min_value=0.01, value=defaults["amt"], key="ens_amt")
+    timestamp = st.number_input("Timestamp", value=defaults["ts"], key="ens_ts")
 
 with col_presets:
     st.markdown("**Demo Presets:**")
     if st.button("💳 Card Testing (£2,400)", key="ens_preset_card"):
-        st.session_state["ens_src"] = 7
-        st.session_state["ens_dst"] = 50
-        st.session_state["ens_amt"] = 2400.0
-        st.session_state["ens_ts"] = 1700050000.0
+        st.session_state["ens_defaults"] = {"src": 7, "dst": 50, "amt": 2400.0, "ts": 1700050000.0}
         st.rerun()
     if st.button("🏦 Laundering (£30,000)", key="ens_preset_ml"):
-        st.session_state["ens_src"] = 3
-        st.session_state["ens_dst"] = 12
-        st.session_state["ens_amt"] = 30000.0
-        st.session_state["ens_ts"] = 1700060000.0
+        st.session_state["ens_defaults"] = {"src": 3, "dst": 12, "amt": 30000.0, "ts": 1700060000.0}
         st.rerun()
     if st.button("✅ Normal (£45)", key="ens_preset_norm"):
-        st.session_state["ens_src"] = 0
-        st.session_state["ens_dst"] = 200
-        st.session_state["ens_amt"] = 45.0
-        st.session_state["ens_ts"] = 1700040000.0
+        st.session_state["ens_defaults"] = {"src": 0, "dst": 200, "amt": 45.0, "ts": 1700040000.0}
         st.rerun()
     if st.button("💥 Bust-Out (£12,000)", key="ens_preset_bust"):
-        st.session_state["ens_src"] = 15
-        st.session_state["ens_dst"] = 58
-        st.session_state["ens_amt"] = 12000.0
-        st.session_state["ens_ts"] = 1700070000.0
+        st.session_state["ens_defaults"] = {"src": 15, "dst": 58, "amt": 12000.0, "ts": 1700070000.0}
         st.rerun()
 
 st.divider()
