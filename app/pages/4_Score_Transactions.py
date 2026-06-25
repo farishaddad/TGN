@@ -41,31 +41,27 @@ with tab_manual:
 
     col_input, col_spacer, col_presets = st.columns([3, 0.5, 2])
 
+    # Presets write to separate keys (not widget keys) to avoid conflict
+    defaults = st.session_state.get("score_defaults", {
+        "src": 7, "dst": 50, "amt": 2400.0, "ts": 1700050000.0
+    })
+
     with col_input:
-        src_id = st.number_input("Source Account ID", min_value=0, value=7, key="score_src")
-        dst_id = st.number_input("Destination ID", min_value=0, value=50, key="score_dst")
-        amount = st.number_input("Amount (£)", min_value=0.01, value=2400.0, key="score_amt")
-        timestamp = st.number_input("Timestamp", value=1700050000.0, key="score_ts")
+        src_id = st.number_input("Source Account ID", min_value=0, value=int(defaults["src"]))
+        dst_id = st.number_input("Destination ID", min_value=0, value=int(defaults["dst"]))
+        amount = st.number_input("Amount (£)", min_value=0.01, value=float(defaults["amt"]))
+        timestamp = st.number_input("Timestamp", value=float(defaults["ts"]))
 
     with col_presets:
         st.markdown("**Quick Presets:**")
         if st.button("💳 Card Testing (£2,400)", key="preset_card"):
-            st.session_state["score_src"] = 7
-            st.session_state["score_dst"] = 50
-            st.session_state["score_amt"] = 2400.0
-            st.session_state["score_ts"] = 1700050000.0
+            st.session_state["score_defaults"] = {"src": 7, "dst": 50, "amt": 2400.0, "ts": 1700050000.0}
             st.rerun()
         if st.button("🏦 Money Laundering (£30,000)", key="preset_ml"):
-            st.session_state["score_src"] = 3
-            st.session_state["score_dst"] = 12
-            st.session_state["score_amt"] = 30000.0
-            st.session_state["score_ts"] = 1700060000.0
+            st.session_state["score_defaults"] = {"src": 3, "dst": 12, "amt": 30000.0, "ts": 1700060000.0}
             st.rerun()
         if st.button("✅ Normal Purchase (£45)", key="preset_normal"):
-            st.session_state["score_src"] = 0
-            st.session_state["score_dst"] = 200
-            st.session_state["score_amt"] = 45.0
-            st.session_state["score_ts"] = 1700040000.0
+            st.session_state["score_defaults"] = {"src": 0, "dst": 200, "amt": 45.0, "ts": 1700040000.0}
             st.rerun()
 
     st.divider()
