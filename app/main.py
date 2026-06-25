@@ -122,14 +122,36 @@ st.markdown("""
 """)
 
 # ---------------------------------------------------------------------------
-# Sidebar branding
+# Sidebar: Mode Selector + Branding
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
+    st.markdown("### Mode")
+    mode = st.radio(
+        "Select demo mode:",
+        options=["Standard TGN", "Ensemble TGN"],
+        index=0,
+        help=(
+            "Standard TGN: single model scoring. "
+            "Ensemble TGN: multi-detector system with per-model breakdown."
+        ),
+        key="app_mode",
+    )
+
+    if mode == "Ensemble TGN":
+        st.info(
+            "**Ensemble mode** active. Use the ensemble pages below "
+            "for multi-detector scoring and pattern visualisation."
+        )
+        st.markdown("**Ensemble Pages:**")
+        st.markdown("- [Generate Data (Ensemble)](ensemble_pages/1_Generate_Data)")
+        st.markdown("- [Score Transactions (Ensemble)](ensemble_pages/4_Score_Transactions)")
+        st.markdown("- [Pattern Visualiser (Ensemble)](ensemble_pages/6_Pattern_Visualiser)")
+
     st.markdown("---")
     st.markdown(
         "<p style='color:#888; font-size:0.8em; text-align:center;'>"
-        "TGN Fraud Detection v0.1<br>"
+        "TGN Fraud Detection v0.2<br>"
         "Temporal Graph Networks<br>"
         "for Financial Crime"
         "</p>",
