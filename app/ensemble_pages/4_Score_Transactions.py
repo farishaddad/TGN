@@ -62,15 +62,23 @@ with col_presets:
     st.markdown("**Demo Presets:**")
     if st.button("💳 Card Testing (£2,400)", key="ens_preset_card"):
         st.session_state["ens_defaults"] = {"src": 7, "dst": 50, "amt": 2400.0, "ts": 1700050000.0}
+        for k in ("ens_src", "ens_dst", "ens_amt", "ens_ts"):
+            st.session_state.pop(k, None)
         st.rerun()
     if st.button("🏦 Laundering (£30,000)", key="ens_preset_ml"):
         st.session_state["ens_defaults"] = {"src": 3, "dst": 12, "amt": 30000.0, "ts": 1700060000.0}
+        for k in ("ens_src", "ens_dst", "ens_amt", "ens_ts"):
+            st.session_state.pop(k, None)
         st.rerun()
     if st.button("✅ Normal (£45)", key="ens_preset_norm"):
         st.session_state["ens_defaults"] = {"src": 0, "dst": 200, "amt": 45.0, "ts": 1700040000.0}
+        for k in ("ens_src", "ens_dst", "ens_amt", "ens_ts"):
+            st.session_state.pop(k, None)
         st.rerun()
     if st.button("💥 Bust-Out (£12,000)", key="ens_preset_bust"):
         st.session_state["ens_defaults"] = {"src": 15, "dst": 58, "amt": 12000.0, "ts": 1700070000.0}
+        for k in ("ens_src", "ens_dst", "ens_amt", "ens_ts"):
+            st.session_state.pop(k, None)
         st.rerun()
 
 st.divider()
