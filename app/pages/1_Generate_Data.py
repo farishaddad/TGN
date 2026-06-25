@@ -2,7 +2,8 @@
 Streamlit page: Generate synthetic fraud networks.
 
 Lets users configure and generate synthetic transaction networks
-with various fraud patterns injected.
+with various fraud patterns injected. Includes a Demo Mode with
+pre-scripted fraud scenarios for live presentations.
 """
 
 import streamlit as st
@@ -14,6 +15,37 @@ import plotly.graph_objects as go
 from tgn_learn.generators import BankSimGenerator, PaySimGenerator, GeneratorRegistry
 from tgn_learn.generators.base import GeneratorConfig
 
+# ---------------------------------------------------------------------------
+# Demo Mode — Pre-scripted scenarios for live demos
+# ---------------------------------------------------------------------------
+DEMO_SCENARIOS = {
+    "Card Testing Ring": {
+        "description": "A compromised card is tested with 8 micro-transactions before a £2,400 purchase",
+        "config": GeneratorConfig(
+            num_accounts=50, num_merchants=15,
+            num_transactions=2000, fraud_rate=0.04, seed=42,
+        ),
+        "patterns": ["card_testing", "account_takeover"],
+        "highlight_account": 7,
+    },
+    "Money Laundering Network": {
+        "description": "£180k layered through 6 intermediary accounts over 48 hours",
+        "config": GeneratorConfig(
+            num_accounts=80, num_merchants=20,
+            num_transactions=3000, fraud_rate=0.03, seed=99,
+        ),
+        "patterns": ["money_laundering"],
+    },
+    "Bust-Out Fraud": {
+        "description": "Account builds credit history over 3 months, then maxes out instantly",
+        "config": GeneratorConfig(
+            num_accounts=60, num_merchants=18,
+            num_transactions=2500, fraud_rate=0.025, seed=77,
+        ),
+        "patterns": ["bust_out", "synthetic_identity"],
+    },
+}
+
 st.header("Generate Synthetic Fraud Data")
 
 st.markdown("""
@@ -21,87 +53,124 @@ Generate a synthetic transaction network with configurable fraud patterns.
 The generated graph will be available for exploration, training, and scoring.
 """)
 
-# --- Quick Start ---
-col1, col2 = st.columns([1, 3])
-with col1:
-    if st.button("Quick Start", type="primary"):
-        config = GeneratorConfig(
-            num_accounts=200, num_merchants=30,
-            num_transactions=5000, fraud_rate=0.03, seed=42,
-        )
-        gen = BankSimGenerator(config)
+# --- Demo Mode ---
+demo_mode = st.toggle("🎯 Demo Mode", value=False, help="Use pre-scripted scenarios for live presentations")
+
+if demo_mode:
+    st.info("**Demo Mode** — Select a pre-scripted fraud scenario with named accounts and a narrated fraud story.")
+
+    scenario_name = st.selectbox(
+        "Select Scenario",
+        options=list(DEMO_SCENARIOS.keys()),
+        format_func=lambda x: f"🎬 {x}",
+    )
+    scenario = DEMO_SCENARIOS[scenario_name]
+
+    st.markdown(f"**{scenario_name}:** {scenario['description']}")
+    st.caption(
+        f"Accounts: {scenario['config'].num_accounts} | "
+        f"Merchants: {scenario['config'].num_merchants} | "
+        f"Transactions: {scenario['config'].num_transactions} | "
+        f"Fraud rate: {scenario['config'].fraud_rate:.0%} | "
+        f"Patterns: {', '.join(scenario['patterns'])}"
+    )
+
+    if "highlight_account" in scenario:
+        st.markdown(f"🔍 **Watch account {scenario['highlight_account']}** — this is the compromised card.")
+
+    if st.button("▶️ Generate Demo Scenario", type="primary"):
+        config = scenario["config"]
+        gen = BankSimGenerator(config, patterns=scenario["patterns"])
         graph = gen.generate()
         st.session_state["graph"] = graph
         st.session_state["gen_config"] = config
-        st.success("Generated 5000 transactions with 3% fraud rate!")
+        st.session_state["demo_scenario"] = scenario_name
+        if "highlight_account" in scenario:
+            st.session_state["highlight_account"] = scenario["highlight_account"]
+        st.success(f"Generated **{scenario_name}** scenario — {graph.num_edges} transactions, {graph.num_fraud} fraudulent.")
 
-with col2:
-    st.caption("One-click generation with good defaults (200 accounts, 5000 txns, 3% fraud)")
+else:
+    # --- Quick Start ---
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("Quick Start", type="primary"):
+            config = GeneratorConfig(
+                num_accounts=200, num_merchants=30,
+                num_transactions=5000, fraud_rate=0.03, seed=42,
+            )
+            gen = BankSimGenerator(config)
+            graph = gen.generate()
+            st.session_state["graph"] = graph
+            st.session_state["gen_config"] = config
+            st.success("Generated 5000 transactions with 3% fraud rate!")
 
-st.divider()
+    with col2:
+        st.caption("One-click generation with good defaults (200 accounts, 5000 txns, 3% fraud)")
 
-# --- Configuration ---
-st.subheader("Configuration")
+    st.divider()
 
-col1, col2, col3 = st.columns(3)
+    # --- Configuration ---
+    st.subheader("Configuration")
 
-with col1:
-    generator_type = st.selectbox(
-        "Generator",
-        options=["banksim", "paysim"],
-        help="BankSim: merchant fraud patterns. PaySim: mobile money patterns.",
-    )
-    num_accounts = st.slider("Accounts", 50, 1000, 200, step=50)
-    num_merchants = st.slider("Merchants", 10, 100, 30, step=10)
+    col1, col2, col3 = st.columns(3)
 
-with col2:
-    num_transactions = st.slider("Transactions", 500, 20000, 5000, step=500)
-    fraud_rate = st.slider("Fraud Rate (%)", 1, 20, 3) / 100.0
-    seed = st.number_input("Random Seed", value=42, step=1)
+    with col1:
+        generator_type = st.selectbox(
+            "Generator",
+            options=["banksim", "paysim"],
+            help="BankSim: merchant fraud patterns. PaySim: mobile money patterns.",
+        )
+        num_accounts = st.slider("Accounts", 50, 1000, 200, step=50)
+        num_merchants = st.slider("Merchants", 10, 100, 30, step=10)
 
-with col3:
-    # Pattern selection (BankSim)
-    if generator_type == "banksim":
-        st.markdown("**Fraud Patterns:**")
-        patterns = []
-        if st.checkbox("Account Takeover", value=True):
-            patterns.append("account_takeover")
-        if st.checkbox("Card Testing", value=True):
-            patterns.append("card_testing")
-        if st.checkbox("Money Laundering", value=True):
-            patterns.append("money_laundering")
-        if st.checkbox("Synthetic Identity", value=True):
-            patterns.append("synthetic_identity")
-        if st.checkbox("Bust Out", value=True):
-            patterns.append("bust_out")
-    else:
-        st.markdown("**Fraud Patterns:**")
-        patterns = []
-        if st.checkbox("Money Mule", value=True):
-            patterns.append("money_mule")
-        if st.checkbox("Structuring", value=True):
-            patterns.append("structuring")
-        if st.checkbox("Account Drainage", value=True):
-            patterns.append("account_drainage")
+    with col2:
+        num_transactions = st.slider("Transactions", 500, 20000, 5000, step=500)
+        fraud_rate = st.slider("Fraud Rate (%)", 1, 20, 3) / 100.0
+        seed = st.number_input("Random Seed", value=42, step=1)
 
-# --- Generate Button ---
-if st.button("Generate Network"):
-    config = GeneratorConfig(
-        num_accounts=num_accounts,
-        num_merchants=num_merchants,
-        num_transactions=num_transactions,
-        fraud_rate=fraud_rate,
-        seed=int(seed),
-    )
+    with col3:
+        # Pattern selection (BankSim)
+        if generator_type == "banksim":
+            st.markdown("**Fraud Patterns:**")
+            patterns = []
+            if st.checkbox("Account Takeover", value=True):
+                patterns.append("account_takeover")
+            if st.checkbox("Card Testing", value=True):
+                patterns.append("card_testing")
+            if st.checkbox("Money Laundering", value=True):
+                patterns.append("money_laundering")
+            if st.checkbox("Synthetic Identity", value=True):
+                patterns.append("synthetic_identity")
+            if st.checkbox("Bust Out", value=True):
+                patterns.append("bust_out")
+        else:
+            st.markdown("**Fraud Patterns:**")
+            patterns = []
+            if st.checkbox("Money Mule", value=True):
+                patterns.append("money_mule")
+            if st.checkbox("Structuring", value=True):
+                patterns.append("structuring")
+            if st.checkbox("Account Drainage", value=True):
+                patterns.append("account_drainage")
 
-    gen = GeneratorRegistry.create(generator_type, config, patterns=patterns or None)
+    # --- Generate Button ---
+    if st.button("Generate Network"):
+        config = GeneratorConfig(
+            num_accounts=num_accounts,
+            num_merchants=num_merchants,
+            num_transactions=num_transactions,
+            fraud_rate=fraud_rate,
+            seed=int(seed),
+        )
 
-    with st.spinner("Generating..."):
-        graph = gen.generate()
+        gen = GeneratorRegistry.create(generator_type, config, patterns=patterns or None)
 
-    st.session_state["graph"] = graph
-    st.session_state["gen_config"] = config
-    st.success(f"Generated {graph.num_edges} transactions!")
+        with st.spinner("Generating..."):
+            graph = gen.generate()
+
+        st.session_state["graph"] = graph
+        st.session_state["gen_config"] = config
+        st.success(f"Generated {graph.num_edges} transactions!")
 
 # --- Display Results ---
 if "graph" in st.session_state:

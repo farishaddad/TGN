@@ -21,6 +21,49 @@ from tgn_learn.graph import Edge, Node, TemporalGraph, EDGE_FEAT_DIM
 from .base import BaseGenerator, GeneratorConfig
 
 
+# ---------------------------------------------------------------------------
+# Pattern metadata for the explanation UI and demo narration.
+# Maps internal pattern names to display names, descriptions, and research basis.
+# ---------------------------------------------------------------------------
+PATTERN_METADATA = {
+    "card_testing": {
+        "display_name": "Card Testing Ring",
+        "description": "Stolen card validated with micro-transactions before large purchase",
+        "typical_signals": ["velocity_burst", "amount_escalation", "new_merchant"],
+        "detection_window": "5 minutes",
+        "reference_paper": "Wu & Zhang (BDAIE 2025) — Event-centric graph detects fund-flow chain",
+    },
+    "money_laundering": {
+        "display_name": "Money Laundering",
+        "description": "Funds layered through intermediary accounts to obscure origin",
+        "typical_signals": ["chain_topology", "round_amount", "rapid_forwarding"],
+        "detection_window": "24-48 hours",
+        "reference_paper": "Saldana-Ulloa et al. (Algorithms 2024) — Multi-graph fusion detects layering",
+    },
+    "bust_out": {
+        "display_name": "Bust-Out Fraud",
+        "description": "Account builds legitimate history before sudden maxed-out fraud",
+        "typical_signals": ["baseline_deviation", "account_age", "limit_exhaustion"],
+        "detection_window": "3-6 months",
+        "reference_paper": "DySA-TGN (DASFAA 2025) — Dual-track memory separates baseline from deviation",
+    },
+    "account_takeover": {
+        "display_name": "Account Takeover",
+        "description": "Compromised credentials lead to rapid high-value transactions",
+        "typical_signals": ["location_shift", "device_change", "velocity_burst"],
+        "detection_window": "Minutes",
+        "reference_paper": "TFLAG (arXiv 2025) — Self-supervised deviation network flags novel behaviour",
+    },
+    "synthetic_identity": {
+        "display_name": "Synthetic Identity Fraud",
+        "description": "Fabricated identity makes immediate large purchases",
+        "typical_signals": ["new_account", "large_first_transaction", "no_history"],
+        "detection_window": "Account creation",
+        "reference_paper": "AnomalyGFM (KDD 2025) — Zero-shot detection via neighbourhood residuals",
+    },
+}
+
+
 class BankSimGenerator(BaseGenerator):
     """
     Synthetic bank transaction generator with 5 injectable fraud patterns.

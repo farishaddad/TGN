@@ -20,6 +20,14 @@ class TGNConfig:
         num_neighbors: Number of temporal neighbors to sample
         num_heads: Number of attention heads in TransformerConv
         dropout: Dropout rate in attention layers
+        use_multiscale_time: Use MultiScaleTimeEncoder (TempReasoner 2026)
+            instead of single-scale TimeEncoder. Detects fraud patterns
+            at minute, hour, day, week, and month scales simultaneously.
+        fit_rf_head: Fit a Random Forest scoring head post-training
+            (NID-TGN, SPACE 2024). When True, an RFScoringHead is fitted
+            on validation embeddings after TGN training completes.
+        rf_n_estimators: Number of trees in the RF scoring head.
+        rf_max_depth: Max depth for RF trees (None for unlimited).
     """
 
     memory_dim: int = 64
@@ -29,3 +37,11 @@ class TGNConfig:
     num_neighbors: int = 10
     num_heads: int = 2
     dropout: float = 0.1
+
+    # Phase 1A — multi-scale time encoding (TempReasoner, 2026)
+    use_multiscale_time: bool = True
+
+    # Phase 1B — RF scoring head (NID-TGN, 2024)
+    fit_rf_head: bool = True
+    rf_n_estimators: int = 200
+    rf_max_depth: int | None = 10

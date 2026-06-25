@@ -74,6 +74,7 @@ class TGNFraudDetector(nn.Module):
             time_dim=config.time_dim,
             num_heads=config.num_heads,
             dropout=config.dropout,
+            use_multiscale_time=config.use_multiscale_time,
         )
 
         # Dual scoring heads

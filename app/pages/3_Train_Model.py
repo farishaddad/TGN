@@ -1,17 +1,49 @@
 """
 Streamlit page: Train TGN model with live metrics.
+
+Supports both live training and loading a pre-trained demo model
+for faster presentations.
 """
+
+import os
+from pathlib import Path
 
 import streamlit as st
 import plotly.graph_objects as go
 
 from tgn_learn.model import TGNConfig
+from tgn_learn.scoring import Scorer
 from tgn_learn.training import TGNTrainer, TrainingConfig
 
 st.header("Train TGN Model")
 
+# --- Pre-trained Demo Model ---
+DEMO_CHECKPOINT = Path("checkpoints/demo_model.pt")
+
+col_load1, col_load2 = st.columns([1, 3])
+with col_load1:
+    load_disabled = not DEMO_CHECKPOINT.exists()
+    if st.button(
+        "⚡ Load Pre-trained Demo Model",
+        type="secondary",
+        disabled=load_disabled,
+        help="Load a pre-trained model (seed=42, 5K txns, 20 epochs) to skip training",
+    ):
+        scorer = Scorer.from_checkpoint(str(DEMO_CHECKPOINT))
+        st.session_state["trained_model"] = scorer.model
+        st.session_state["train_results"] = None  # no live history
+        st.success("Pre-trained demo model loaded! Ready to score.")
+
+with col_load2:
+    if load_disabled:
+        st.caption("No demo checkpoint found. Train a model below or generate one with `make demo-checkpoint`.")
+    else:
+        st.caption("Instant load — trained on 5,000 transactions (seed=42, 20 epochs). Skip straight to scoring.")
+
+st.divider()
+
 if "graph" not in st.session_state:
-    st.warning("No graph generated yet. Go to **Generate Data** first.")
+    st.warning("No graph generated yet. Go to **Generate Data** first, or load the pre-trained model above.")
     st.stop()
 
 graph = st.session_state["graph"]
@@ -124,7 +156,7 @@ if st.button("Start Training", type="primary"):
     st.success("Model saved to session. Go to **Score Transactions** to use it.")
 
 # Show existing results if available
-elif "train_results" in st.session_state:
+elif st.session_state.get("train_results") is not None:
     results = st.session_state["train_results"]
     st.subheader("Previous Training Results")
 

@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 from torch_geometric.nn import TransformerConv
 
-from .time_encoder import TimeEncoder
+from .time_encoder import MultiScaleTimeEncoder, TimeEncoder
 
 
 class GraphAttentionEmbedding(nn.Module):
@@ -28,6 +28,8 @@ class GraphAttentionEmbedding(nn.Module):
         time_dim: Time encoding dimension
         num_heads: Number of attention heads
         dropout: Attention dropout rate
+        use_multiscale_time: If True, use MultiScaleTimeEncoder
+            (TempReasoner 2026) instead of single-scale TimeEncoder.
     """
 
     def __init__(
@@ -38,9 +40,15 @@ class GraphAttentionEmbedding(nn.Module):
         time_dim: int,
         num_heads: int = 2,
         dropout: float = 0.1,
+        use_multiscale_time: bool = False,
     ):
         super().__init__()
-        self.time_enc = TimeEncoder(time_dim)
+
+        if use_multiscale_time:
+            self.time_enc = MultiScaleTimeEncoder(time_dim)
+        else:
+            self.time_enc = TimeEncoder(time_dim)
+
         edge_dim = msg_dim + time_dim
 
         # TransformerConv with multi-head attention
