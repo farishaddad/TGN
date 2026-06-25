@@ -27,12 +27,14 @@ standard_pages = [
     st.Page("pages/3_Train_Model.py",      title="Train Model",          icon="🧠"),
     st.Page("pages/4_Score_Transactions.py", title="Score Transactions", icon="🎯"),
     st.Page("pages/5_Upload_CSV.py",       title="Upload CSV",           icon="📤"),
+    st.Page("pages/6_Pattern_Visualiser.py", title="Pattern Visualiser", icon="🎭"),
+    st.Page("pages/7_Why_TGN.py",          title="Why TGN?",             icon="💡"),
 ]
 
 ensemble_pages = [
-    st.Page("ensemble_pages/1_Generate_Data.py",      title="Generate Data",        icon="📊"),
-    st.Page("ensemble_pages/4_Score_Transactions.py", title="Score Transactions",   icon="🎯"),
-    st.Page("ensemble_pages/6_Pattern_Visualiser.py", title="Pattern Visualiser",   icon="🎭"),
+    st.Page("ensemble_pages/1_Generate_Data.py",      title="Ensemble Generate",      icon="📊", url_path="ensemble-generate"),
+    st.Page("ensemble_pages/4_Score_Transactions.py", title="Ensemble Score",         icon="🎯", url_path="ensemble-score"),
+    st.Page("ensemble_pages/6_Pattern_Visualiser.py", title="Ensemble Visualiser",    icon="🎭", url_path="ensemble-visualiser"),
 ]
 
 pg = st.navigation(
