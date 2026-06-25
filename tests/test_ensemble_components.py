@@ -294,6 +294,7 @@ class TestConfigWiring:
         config = TGNConfig(
             memory_dim=32, embedding_dim=32,
             time_dim=16, edge_feat_dim=20,
+            time_encoder_type="multiscale",
             use_multiscale_time=True,
         )
         model = TGNFraudDetector(num_nodes=50, config=config)
@@ -303,6 +304,7 @@ class TestConfigWiring:
         config = TGNConfig(
             memory_dim=32, embedding_dim=32,
             time_dim=16, edge_feat_dim=20,
+            time_encoder_type="fourier",
             use_multiscale_time=False,
         )
         model = TGNFraudDetector(num_nodes=50, config=config)
@@ -334,6 +336,7 @@ class TestConfigWiring:
         config = TGNConfig(
             memory_dim=32, embedding_dim=32,
             time_dim=16, edge_feat_dim=20,
+            time_encoder_type="multiscale",
             use_multiscale_time=True,
         )
         model = TGNFraudDetector(num_nodes=100, config=config)

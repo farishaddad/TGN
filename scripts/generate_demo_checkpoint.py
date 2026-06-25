@@ -56,6 +56,7 @@ def main():
     model_config = TGNConfig(
         memory_dim=64,
         embedding_dim=64,
+        time_encoder_type="pragma",
     )
 
     print(f"\n[2/3] Training: {train_config.epochs} epochs, "

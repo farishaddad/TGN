@@ -25,7 +25,7 @@ train_config = TrainingConfig(
     epochs=20, batch_size=200, learning_rate=1e-3,
     patience=20, checkpoint_dir="checkpoints", device="cpu",
 )
-model_config = TGNConfig(memory_dim=64, embedding_dim=64)
+model_config = TGNConfig(memory_dim=64, embedding_dim=64, time_encoder_type="pragma")
 
 trainer = TGNTrainer(train_config, model_config)
 results = trainer.train(graph, verbose=False)

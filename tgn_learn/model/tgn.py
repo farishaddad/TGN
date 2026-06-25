@@ -25,6 +25,7 @@ from .config import TGNConfig
 from .embedder import GraphAttentionEmbedding
 from .heads import LinkPredictor, NodeClassifier
 from .neighbor_loader import LastNeighborLoader
+from .profile_encoder import ProfileStateEncoder
 
 
 class TGNFraudDetector(nn.Module):
@@ -66,20 +67,41 @@ class TGNFraudDetector(nn.Module):
             aggregator_module=LastAggregator(),
         )
 
+        # Profile state encoder (PRAGMA, Revolut 2026)
+        self.use_profile_encoder = getattr(config, "use_profile_encoder", False)
+        if self.use_profile_encoder:
+            profile_dim = getattr(config, "profile_dim", 6)
+            profile_encoder_dim = getattr(config, "profile_encoder_dim", 32)
+            self.profile_encoder = ProfileStateEncoder(
+                profile_dim=profile_dim, out_dim=profile_encoder_dim
+            )
+            # GNN input is memory + profile embedding
+            gnn_in_channels = config.memory_dim + profile_encoder_dim
+        else:
+            self.profile_encoder = None
+            gnn_in_channels = config.memory_dim
+
+        # Node profile features buffer (set externally before forward)
+        self.node_profiles: torch.Tensor | None = None
+
         # Graph attention embedding for contextual representations
         self.gnn = GraphAttentionEmbedding(
-            in_channels=config.memory_dim,
+            in_channels=gnn_in_channels,
             out_channels=config.embedding_dim,
             msg_dim=config.edge_feat_dim,
             time_dim=config.time_dim,
             num_heads=config.num_heads,
             dropout=config.dropout,
-            use_multiscale_time=config.use_multiscale_time,
+            config=config,
         )
 
         # Dual scoring heads
-        self.link_pred = LinkPredictor(config.embedding_dim)
-        self.node_pred = NodeClassifier(config.embedding_dim)
+        # When profile encoder is enabled, z vectors flowing to heads are
+        # memory_dim + profile_encoder_dim. Otherwise they are memory_dim
+        # (matching the original embedding_dim in default config).
+        head_in_dim = gnn_in_channels
+        self.link_pred = LinkPredictor(head_in_dim)
+        self.node_pred = NodeClassifier(head_in_dim)
 
         # Neighbor loader (set up externally during training)
         self.neighbor_loader = LastNeighborLoader(
@@ -114,6 +136,19 @@ class TGNFraudDetector(nn.Module):
         n_id = torch.cat([src, dst]).unique()
         z, last_update = self.memory(n_id)
 
+        # Fuse profile embeddings with memory (PRAGMA profile branch)
+        if self.use_profile_encoder:
+            if self.node_profiles is not None:
+                profiles = self.node_profiles[n_id]  # [len(n_id), profile_dim]
+                z_profile = self.profile_encoder(profiles)  # [len(n_id), profile_encoder_dim]
+            else:
+                # Graceful fallback: zero profile when features not set
+                profile_dim = getattr(self.config, "profile_encoder_dim", 32)
+                z_profile = torch.zeros(
+                    z.size(0), profile_dim, device=z.device, dtype=z.dtype
+                )
+            z = torch.cat([z, z_profile], dim=-1)
+
         # Build association map: node_id -> index in z
         assoc = torch.full(
             (n_id.max() + 1,), -1, dtype=torch.long, device=src.device
@@ -132,6 +167,18 @@ class TGNFraudDetector(nn.Module):
         if neg_dst is not None:
             n_id_neg = neg_dst.unique()
             z_neg_all, _ = self.memory(n_id_neg)
+            # Apply same profile fusion to negative destinations
+            if self.use_profile_encoder:
+                if self.node_profiles is not None:
+                    neg_profiles = self.node_profiles[n_id_neg]
+                    z_neg_profile = self.profile_encoder(neg_profiles)
+                else:
+                    profile_dim = getattr(self.config, "profile_encoder_dim", 32)
+                    z_neg_profile = torch.zeros(
+                        z_neg_all.size(0), profile_dim,
+                        device=z_neg_all.device, dtype=z_neg_all.dtype
+                    )
+                z_neg_all = torch.cat([z_neg_all, z_neg_profile], dim=-1)
             assoc_neg = torch.full(
                 (n_id_neg.max() + 1,), 0, dtype=torch.long, device=src.device
             )

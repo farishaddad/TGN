@@ -112,13 +112,34 @@ class BankSimGenerator(BaseGenerator):
         ]
 
         for i in range(self.config.num_accounts):
+            balance = float(rng.lognormal(8, 1.5))
+            age_days = int(rng.exponential(365))
+            risk_score = float(rng.beta(2, 10))
+            is_business = float(rng.random() < 0.15)
+            region_idx = int(rng.integers(0, 8))
+
+            # 6-dim profile vector (PRAGMA, Revolut 2026):
+            # [account_age_norm, balance_quantile, limit_quantile,
+            #  is_business, region_sin, region_cos]
+            profile = np.array([
+                min(age_days / 3650.0, 1.0),             # account_age_norm
+                min(balance / 50000.0, 1.0),             # balance_quantile (approx)
+                float(rng.beta(3, 2)),                   # limit_quantile
+                is_business,                             # is_business
+                np.sin(2 * np.pi * region_idx / 8.0),   # region_sin
+                np.cos(2 * np.pi * region_idx / 8.0),   # region_cos
+            ], dtype=np.float32)
+
             graph.add_node(Node(
                 node_id=i,
                 node_type="account",
+                features=profile,
                 metadata={
-                    "balance": float(rng.lognormal(8, 1.5)),
-                    "age_days": int(rng.exponential(365)),
-                    "risk_score": float(rng.beta(2, 10)),
+                    "balance": balance,
+                    "age_days": age_days,
+                    "risk_score": risk_score,
+                    "is_business": is_business,
+                    "region_idx": region_idx,
                 },
             ))
 

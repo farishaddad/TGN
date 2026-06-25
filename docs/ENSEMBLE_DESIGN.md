@@ -180,6 +180,99 @@ tgn_learn/
 
 ## 4. Phased Implementation Plan
 
+### Phase 0.5 — PRAGMA Enhancements (add before Phase 1, no breaking changes)
+*Grounded in PRAGMA (Revolut, arXiv:2604.08649, April 2026) — production-validated on 26M users / 24B events. These are self-contained upgrades to existing modules.*
+
+**0.5A: Add `PRAGMATimeEncoder` as default time encoding**
+- **File**: `tgn_learn/model/time_encoder.py` — class already added in this commit
+- **What it does**: Replaces single-scale sinusoidal encoding with two orthogonal signals:
+  1. Log-transform gap: `8·ln(1 + Δt/8)` — scale-agnostic, no hyperparameter, preserves resolution for recent events while compressing old gaps across a 1-second to 10-year range
+  2. Fixed calendar cycle features (sin/cos for hour, day-of-week, day-of-month) — captures daily and weekly fraud rhythms directly
+- **Config change**: add `time_encoder_type: str = "pragma"` to `TGNConfig`; valid values: `"fourier"` (original), `"multiscale"` (TempReasoner), `"pragma"` (new default)
+- **Integration**: `embedder.py` — swap `TimeEncoder` based on `config.time_encoder_type`; `PRAGMATimeEncoder.forward(delta_t, t_abs)` requires both arguments — pass `t` (absolute timestamp) from the event batch alongside the existing relative time delta
+- **Note**: `PRAGMATimeEncoder` is a drop-in upgrade. The output shape is the same (`[batch, time_dim]`). Existing checkpoints trained with the Fourier encoder still load — the encoder weights are re-initialised on first use.
+
+```python
+# embedder.py — updated _make_time_encoder helper
+def _make_time_encoder(config: TGNConfig) -> nn.Module:
+    if config.time_encoder_type == "pragma":
+        return PRAGMATimeEncoder(config.time_dim)
+    elif config.time_encoder_type == "multiscale":
+        return MultiScaleTimeEncoder(config.time_dim)
+    else:
+        return TimeEncoder(config.time_dim)  # original Fourier
+```
+
+**0.5B: Add `ProfileStateEncoder` — static account context branch**
+- **File**: new `tgn_learn/model/profile_encoder.py`
+- **What it does**: Encodes time-invariant account attributes (account age, card tier, spending limit quantile, service region) as a separate encoder branch that feeds into TGN alongside the memory state. Inspired by PRAGMA's two-branch design (profile state encoder + event encoder → history encoder).
+- **Source**: PRAGMA Section 2.3.2 — Profile State Encoder. Ablation shows +2.1% AUC on fraud tasks when profile state is included vs. events-only.
+
+```python
+# tgn_learn/model/profile_encoder.py
+class ProfileStateEncoder(nn.Module):
+    """Static account context encoder (PRAGMA, Revolut 2026).
+
+    Encodes time-invariant profile attributes as a fixed-dimensional
+    vector that is concatenated with the TGN node memory before the
+    graph attention embedding step.
+
+    This separation mirrors PRAGMA's finding: static attributes (account
+    age, plan, spending quantile) carry signals complementary to the
+    dynamic event stream. Fusing them at the embedding level rather than
+    as edge features gives the model explicit access to stable context.
+
+    Input features (6 dims):
+      - account_age_norm:    float  [0, 1]  (days since creation / 3650)
+      - balance_quantile:    float  [0, 1]  (account balance percentile)
+      - limit_quantile:      float  [0, 1]  (credit/spending limit percentile)
+      - is_business:         float  {0, 1}  (business vs. consumer account)
+      - region_emb_sin:      float  [-1,1]  (geographic cluster sin component)
+      - region_emb_cos:      float  [-1,1]  (geographic cluster cos component)
+
+    Args:
+        profile_dim: Input feature dimension (default 6)
+        out_dim:     Output embedding dimension (matches memory_dim)
+    """
+    def __init__(self, profile_dim: int = 6, out_dim: int = 32):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(profile_dim, out_dim * 2),
+            nn.ReLU(),
+            nn.Linear(out_dim * 2, out_dim),
+        )
+
+    def forward(self, profile_features: torch.Tensor) -> torch.Tensor:
+        """Encode static profile attributes.
+        Args:
+            profile_features: [batch, profile_dim]
+        Returns:
+            Profile embedding [batch, out_dim]
+        """
+        return self.encoder(profile_features)
+```
+
+- **Integration with TGN**: in `tgn.py`, when `use_profile_encoder=True`, compute `z_profile = profile_encoder(node_profile_features[n_id])` then `z_combined = torch.cat([z_memory, z_profile], dim=-1)` before passing to `GraphAttentionEmbedding`. Adjust `in_channels` in the embedder accordingly.
+- **Config changes**: add to `TGNConfig`:
+  ```python
+  use_profile_encoder: bool = False     # enable when profile features available
+  profile_dim: int = 6                  # number of static profile features
+  profile_encoder_dim: int = 32         # profile embedding size
+  ```
+- **Data change**: `Node.features` (already exists in `graph.py`) — populate with the 6 profile features above when generating data. `BankSimGenerator` already stores `balance`, `age_days`, `risk_score` in `node.metadata` — move these into `node.features` as the 6-dim vector.
+
+**0.5C: PRAGMA-informed `time_encoder_type="pragma"` as the new default in `TGNConfig`**
+- Update `TGNConfig.time_encoder_type` default from `"fourier"` to `"pragma"`
+- Update all `TrainingConfig` presets in `training/config.py` to use `pragma` time encoding
+- Update the demo checkpoint generation script (`scripts/generate_demo_checkpoint.py`) to re-run with `pragma` encoding
+
+**Tests for Phase 0.5:**
+- [ ] `tests/test_pragma_time_encoder.py` — output shape, gradient flow, log-gap monotonicity, calendar features are periodic
+- [ ] `tests/test_profile_encoder.py` — output shape, gradient flow, different profiles produce different embeddings
+- [ ] `tests/test_tgn_with_profile.py` — TGN forward pass with `use_profile_encoder=True` completes without error
+
+---
+
 ### Phase 1 — Quick Wins (no architecture change)
 *Expected: 1–2 days. No breaking changes.*
 
@@ -842,13 +935,25 @@ No changes needed to pages 1, 2, or 5.
 ## 11. Implementation Order for Kiro
 
 ```
-1. tgn_learn/model/time_encoder.py        (MultiScaleTimeEncoder)
-2. tgn_learn/model/rf_head.py             (RFScoringHead)
-3. tgn_learn/training/graph_smote.py      (GraphSMOTE stub)
-4. tgn_learn/model/config.py              (add new fields)
-5. tgn_learn/model/embedder.py            (hook in MultiScaleTimeEncoder)
-6. tgn_learn/training/trainer.py          (add RF head fit step)
-7. tests/ for Phase 1 ─────────────────── VALIDATE HERE
+# Phase 0.5 — PRAGMA (already in time_encoder.py; wire up + test)
+1.  tgn_learn/model/time_encoder.py        (PRAGMATimeEncoder — DONE; add test)
+2.  tgn_learn/model/profile_encoder.py     (ProfileStateEncoder — new file)
+3.  tgn_learn/model/config.py              (add time_encoder_type, use_profile_encoder, profile_dim)
+4.  tgn_learn/model/embedder.py            (_make_time_encoder helper; accept t_abs arg)
+5.  tgn_learn/model/tgn.py                (add use_profile_encoder branch)
+6.  tgn_learn/generators/banksim.py        (populate Node.features with 6-dim profile vector)
+7.  tests/test_pragma_time_encoder.py
+8.  tests/test_profile_encoder.py
+9.  tests/test_tgn_with_profile.py
+10. scripts/generate_demo_checkpoint.py    (re-run with pragma encoding)
+11. tests/ for Phase 0.5 ──────────────── VALIDATE HERE
+
+# Phase 1 — Quick Wins
+12. tgn_learn/model/rf_head.py             (RFScoringHead)
+13. tgn_learn/training/graph_smote.py      (GraphSMOTE stub)
+14. tgn_learn/model/config.py              (remaining new fields)
+15. tgn_learn/training/trainer.py          (add RF head fit step)
+16. tests/ for Phase 1 ─────────────────── VALIDATE HERE
 
 8. tgn_learn/model/dual_memory.py         (DualTrackMemory)
 9. tgn_learn/model/tgn.py                 (add use_dual_memory flag)
@@ -903,6 +1008,8 @@ No changes needed to pages 1, 2, or 5.
 | ThresholdAdapter | (hi-26 — scalable GNN) | Architecture ideas only | ⚠️ Performance claims unverified |
 | EnsembleMetaLearner | Standard stacking | — | Ensemble design by synthesis |
 | TwoHurdleFilter | Jiang et al. — TFLAG | arXiv 2501.06997 | ✓ Credible (P=1.0 DARPA E3) |
+| PRAGMATimeEncoder | Aldawsari et al. — PRAGMA | arXiv 2604.08649 (Revolut, 2026) | ✓ Production-deployed: 26M users, 24B events |
+| ProfileStateEncoder | Aldawsari et al. — PRAGMA | arXiv 2604.08649 (Revolut, 2026) | ✓ +2.1% AUC in ablation (Section 3.4.2) |
 
 ---
 

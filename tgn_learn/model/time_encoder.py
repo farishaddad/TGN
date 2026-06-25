@@ -11,6 +11,10 @@ Key insight: The initial frequencies span many orders of magnitude
 Also provides MultiScaleTimeEncoder (TempReasoner, Scientific Reports 2026)
 which runs separate encoders at five temporal granularities and fuses with
 learned scale weights.
+
+Also provides PRAGMATimeEncoder (Revolut, arXiv 2604.08649, 2026)
+which combines log-transform inter-event gaps with fixed calendar cycle
+features — validated at production scale on 26M users / 24B events.
 """
 
 import numpy as np
@@ -116,3 +120,96 @@ class MultiScaleTimeEncoder(nn.Module):
         # Concatenate and fuse with learned projection
         fused = torch.cat(scale_encs, dim=-1)
         return self.scale_fusion(fused)
+
+
+class PRAGMATimeEncoder(nn.Module):
+    """Production-validated dual time encoding from PRAGMA (Revolut, 2026).
+
+    Combines two orthogonal time signals, validated at scale on 26M users /
+    24B events (arXiv:2604.08649):
+
+    1. Log-transform inter-event gap: 8·ln(1 + Δt/8)
+       — Preserves linear resolution for recent events, compresses old gaps.
+       Solves aliasing that occurs with raw timestamps in standard Fourier
+       encoding when the dynamic range spans seconds to years.
+
+    2. Calendar cycle features (fixed, not learned):
+       — hour_sin, hour_cos  (24h cycle)
+       — dow_sin,  dow_cos   (7-day cycle)
+       — dom_sin,  dom_cos   (30-day cycle)
+       These capture daily (card-testing bursts at night) and weekly
+       (bust-out activation on Mondays) fraud rhythms.
+
+    The log-gap and calendar features are concatenated and projected to
+    time_dim via a learned linear layer.
+
+    Args:
+        time_dim: Output dimension of the time encoding.
+
+    Note:
+        Unlike TempReasoner's MultiScaleTimeEncoder (which divides Δt by
+        fixed scales), PRAGMA's log-transform works on the raw gap in
+        seconds and is scale-agnostic — no hyperparameter to tune.
+    """
+
+    N_CALENDAR_FEATURES = 6  # 3 cycles × 2 (sin/cos)
+
+    def __init__(self, time_dim: int):
+        super().__init__()
+        self.time_dim = time_dim
+        # Project log-gap (1 dim) + calendar (6 dims) → time_dim
+        self.proj = nn.Linear(1 + self.N_CALENDAR_FEATURES, time_dim)
+
+    @staticmethod
+    def _log_gap(delta_t: torch.Tensor) -> torch.Tensor:
+        """PRAGMA log-transform: 8·ln(1 + Δt/8). Input in seconds."""
+        delta_t = delta_t.float().abs()
+        if delta_t.dim() == 1:
+            delta_t = delta_t.unsqueeze(-1)
+        return 8.0 * torch.log1p(delta_t / 8.0)
+
+    @staticmethod
+    def _calendar_features(t_abs: torch.Tensor) -> torch.Tensor:
+        """Periodic calendar features from absolute timestamp (Unix seconds)."""
+        t = t_abs.float()
+        if t.dim() == 1:
+            t = t.unsqueeze(-1)
+
+        TWO_PI = 2.0 * 3.141592653589793
+        hour_angle = (t % 86400) / 86400 * TWO_PI
+        dow_angle  = (t % 604800) / 604800 * TWO_PI
+        dom_angle  = (t % 2592000) / 2592000 * TWO_PI
+
+        return torch.cat([
+            torch.sin(hour_angle), torch.cos(hour_angle),
+            torch.sin(dow_angle),  torch.cos(dow_angle),
+            torch.sin(dom_angle),  torch.cos(dom_angle),
+        ], dim=-1)
+
+    def forward(
+        self,
+        delta_t: torch.Tensor,
+        t_abs: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Encode time delta (and optionally absolute timestamp).
+
+        Args:
+            delta_t: Inter-event gaps in seconds [batch] or [batch, 1].
+            t_abs:   Absolute Unix timestamps [batch] or [batch, 1].
+                     If None, calendar features are zeroed (graceful fallback
+                     when absolute timestamps are unavailable).
+
+        Returns:
+            Time encoding [batch, time_dim].
+        """
+        log_gap = self._log_gap(delta_t)                        # [batch, 1]
+
+        if t_abs is not None:
+            cal = self._calendar_features(t_abs)                # [batch, 6]
+        else:
+            batch = log_gap.size(0)
+            cal = torch.zeros(batch, self.N_CALENDAR_FEATURES,
+                              device=log_gap.device, dtype=log_gap.dtype)
+
+        combined = torch.cat([log_gap, cal], dim=-1)            # [batch, 7]
+        return self.proj(combined)                              # [batch, time_dim]

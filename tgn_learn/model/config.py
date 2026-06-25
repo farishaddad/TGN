@@ -41,6 +41,19 @@ class TGNConfig:
     # Phase 1A — multi-scale time encoding (TempReasoner, 2026)
     use_multiscale_time: bool = True
 
+    # Phase 0.5 — time encoder selection (PRAGMA, Revolut 2026)
+    # Valid values: None (use legacy use_multiscale_time), "fourier", "multiscale", "pragma"
+    # "pragma" uses log-transform gap + calendar cycle features
+    # "multiscale" uses 5-scale Fourier (TempReasoner)
+    # "fourier" is the original single-scale encoder
+    # None = defer to use_multiscale_time bool (backwards compatible default)
+    time_encoder_type: str | None = None
+
+    # Phase 0.5B — profile state encoder (PRAGMA, Revolut 2026)
+    use_profile_encoder: bool = False
+    profile_dim: int = 6
+    profile_encoder_dim: int = 32
+
     # Phase 1B — RF scoring head (NID-TGN, 2024)
     fit_rf_head: bool = True
     rf_n_estimators: int = 200

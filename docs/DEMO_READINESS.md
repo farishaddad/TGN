@@ -234,39 +234,75 @@ Step 4/4: Large transaction — BLOCKED
 
 ### 3.4 New Page: TGN vs. Baseline Comparison (Page 7)
 
-A single-page comparison showing why TGN outperforms simple models, using the currently-trained model vs. a freshly-trained logistic regression baseline.
+A three-part comparison page. Three columns: Logistic Regression (no graph),
+PRAGMA-style Sequence Model (Revolut, arXiv:2604.08649), TGN Ensemble (this system).
 
 ```
 Page 7 — Why TGN?
 
-┌─────────────────────────────────────────────────────────┐
-│         Performance Comparison on Same Dataset           │
-├─────────────────┬──────────────────┬────────────────────┤
-│                 │ TGN (this model) │ Logistic Regression │
-├─────────────────┼──────────────────┼────────────────────┤
-│ AUC-PR          │ 0.84             │ 0.41               │
-│ F1 Score        │ 0.79             │ 0.48               │
-│ Fraud Recall    │ 0.82             │ 0.44               │
-│ False Positives │ 18%              │ 51%                │
-├─────────────────┼──────────────────┼────────────────────┤
-│ Detects: Card   │ ✅               │ ❌                  │
-│ Testing Rings   │                  │                    │
-│ Detects: Money  │ ✅               │ ❌                  │
-│ Laundering      │                  │                    │
-│ Detects: Bust   │ ✅               │ ⚠️ (late only)     │
-│ Out             │                  │                    │
-└─────────────────┴──────────────────┴────────────────────┘
+┌──────────────────┬─────────────────────┬───────────────────────┐
+│ Logistic         │ Sequence Model      │ TGN Ensemble          │
+│ Regression       │ (PRAGMA-style,      │ (this system)         │
+│                  │  Revolut 2026)      │                       │
+├──────────────────┼─────────────────────┼───────────────────────┤
+│ AUC-PR: ~0.41   │ AUC-PR: ~0.71       │ AUC-PR: ~0.84         │
+│ F1:     ~0.48   │ F1:     ~0.67       │ F1:     ~0.79         │
+├──────────────────┼─────────────────────┼───────────────────────┤
+│ Card Testing: ❌ │ Card Testing: ✅     │ Card Testing: ✅       │
+│ Money Mule:   ❌ │ Money Mule:   ⚠️*  │ Money Mule:   ✅       │
+│ Bust-Out:     ⚠️│ Bust-Out:     ✅     │ Bust-Out:     ✅       │
+│ Account TKO:  ❌ │ Account TKO:  ✅    │ Account TKO:  ✅       │
+└──────────────────┴─────────────────────┴───────────────────────┘
 
-"Why the difference?"
-A logistic regression sees each transaction in isolation.
-TGN sees the full network: who each account has transacted with,
-how recently, at what amounts. Money laundering is invisible to
-simple models but exposes a distinctive graph pattern to TGN.
+* Revolut's own PRAGMA paper (Section 3.4.5) states their sequence model
+  performs BELOW task-specific baseline on AML due to relational complexity.
 ```
 
 **File**: `app/pages/7_Why_TGN.py`
 
-**Implementation**: After training, run a `LogisticRegression(class_weight='balanced')` baseline on the same transaction features (no graph). Plot side-by-side bar chart via Plotly.
+**Column implementations:**
+
+*Column 1 — Logistic Regression:*
+`sklearn.LogisticRegression(class_weight='balanced')` on raw edge features only.
+No graph. Represents typical bank baseline.
+
+*Column 2 — PRAGMA-style Sequence Model:*
+2-layer PyTorch Transformer on last 50 transactions per account, using
+`PRAGMATimeEncoder` from `tgn_learn/model/time_encoder.py` (already implemented).
+No graph structure — purely sequential. Label as "Sequence Model (PRAGMA-style, Revolut 2026)".
+
+*Column 3 — TGN Ensemble* from `session_state["trained_model"]`.
+
+**PRAGMA limitation panel to add below the comparison table:**
+
+```python
+PRAGMA_LIMITATION_QUOTE = """
+**Why Revolut's PRAGMA sequence model struggles with money laundering:**
+
+From the PRAGMA paper (arXiv:2604.08649, Revolut Research, April 2026),
+Section 3.4.5 — "Limitations in Highly Relational Tasks: Anti-Money Laundering":
+
+> "AML remains a challenging task... The highly relational nature of money
+> laundering — where signals span multiple accounts and multi-hop paths —
+> limits the effectiveness of per-user sequence models."
+
+PRAGMA performs **below their own task-specific baseline** on AML.
+
+**Why TGN succeeds here:** TGN models the full transaction graph. The
+laundering chain A → B → C → D is an explicit path that TGN's memory
+propagation traverses. A sequence model sees A, B, C, D as separate
+users with no connection between them.
+
+💡 **PRAGMA + TGN are complementary:**
+   Use PRAGMA for individual behavioural fraud (card testing, bust-out).
+   Use TGN for network fraud (AML, synthetic identity rings).
+   The Ensemble combines both via the LightGBM meta-learner.
+"""
+```
+
+**Per-fraud-type breakdown:**
+Use `Edge.metadata["pattern_type"]` (already stored in BankSim) to compute
+AUC-PR separately for each fraud pattern and show as a grouped bar chart.
 
 ---
 
@@ -410,8 +446,19 @@ Add this as `docs/DEMO_SCRIPT.md` (Kiro should also create this file):
 
 ### Step 5: Why TGN (1 min)
 - Go to Why TGN page
-- Show the comparison table
-- "AUC-PR of 0.84 vs 0.41 for logistic regression on the same data. The patterns that matter in fraud — card testing rings, money laundering chains, bust-out build-up — are relational and temporal. They only appear in the graph."
+- Show the three-column table (Logistic Regression → PRAGMA-style → TGN Ensemble)
+- "AUC-PR 0.84 vs 0.41 for logistic regression — that's expected. But look at the middle column."
+- "This is a sequence foundation model — the same architecture Revolut published as PRAGMA
+   in April 2026. It's pre-trained on user transaction history. It catches card testing and
+   bust-out really well. But see the money mule row? ⚠️"
+- Click to expand the PRAGMA limitation panel:
+  "This is Revolut's own words from their paper: *'AML remains challenging — the highly
+   relational nature of money laundering limits per-user sequence models.'* They score
+   below their own baseline on AML."
+- "TGN catches it because it sees the network, not just the individual. The laundering
+   chain A → B → C → D is a graph path — you need a graph model to see it."
+- "PRAGMA and TGN aren't competing. They're complementary: PRAGMA for individual
+   behavioural fraud, TGN for network fraud. Our ensemble uses both."
 
 ### AWS (1 min)
 - Go to AWS Architecture page
