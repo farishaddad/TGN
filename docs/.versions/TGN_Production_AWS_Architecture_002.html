@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Production AWS Architecture — TGN Fraud Detection + Rule Engine</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+  :root {
+    --color-bg: #f2f1f4;
+    --color-bg-secondary: #ffffff;
+    --color-bg-tertiary: #eae8ed;
+    --color-text: #352f3d;
+    --color-text-secondary: #5e5966;
+    --color-text-muted: #938f9b;
+    --color-border: #c1bec6;
+    --color-border-light: #dcdadf;
+    --color-primary: #4200db;
+    --color-surface-hover: #dcdadf;
+    --font-sans: "Amazon Ember", "Helvetica Neue", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: "SF Mono", "Monaco", "Menlo", "Consolas", monospace;
+  }
+
+  body {
+    background: var(--color-bg);
+    font-family: var(--font-sans);
+    color: var(--color-text);
+    margin: 0;
+    padding: 20px 24px 48px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px; color: var(--color-text); }
+  .subtitle { color: var(--color-text-secondary); font-size: 13px; margin-bottom: 24px; }
+
+  /* ---- Pipeline Flow ---- */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-light);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 28px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+  .pipe-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    min-width: 96px;
+    flex-shrink: 0;
+  }
+  .pipe-icon {
+    width: 42px; height: 42px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    margin-bottom: 6px;
+  }
+  .pipe-label { font-size: 11px; font-weight: 600; color: var(--color-text); }
+  .pipe-sub   { font-size: 10px; color: var(--color-text-muted); margin-top: 2px; }
+  .pipe-arrow {
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+    font-size: 18px;
+    margin: 0 6px;
+    margin-bottom: 20px;
+  }
+  .c1 { background: #e8f0fe; color: #1a56db; }
+  .c2 { background: #fce8f3; color: #9c1c64; }
+  .c3 { background: #e8fef0; color: #0a7c3e; }
+  .c4 { background: #fff8e1; color: #b45309; }
+  .c5 { background: #f3e8ff; color: #6d28d9; }
+  .c6 { background: #fee8e8; color: #b91c1c; }
+  .c7 { background: #e0f2fe; color: #0369a1; }
+
+  /* ---- Section headers ---- */
+  .section-header {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--color-text-secondary);
+    margin: 28px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--color-border);
+  }
+  .section-header i { font-size: 14px; }
+
+  /* ---- Service cards grid ---- */
+  .services-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 14px;
+  }
+  .service-card {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-light);
+    border-radius: 10px;
+    padding: 14px 16px;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    cursor: default;
+  }
+  .service-card:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 2px 8px rgba(66,0,219,0.10);
+  }
+  .svc-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .svc-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .svc-name { font-size: 13px; font-weight: 700; color: var(--color-text); }
+  .svc-tier { font-size: 10px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .svc-why {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-bottom: 8px;
+    line-height: 1.5;
+  }
+  .svc-why strong { color: var(--color-text); }
+  .svc-why code {
+    background: var(--color-bg-tertiary);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .modules-used {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+  }
+  .mod-tag {
+    display: inline-flex; align-items: center;
+    padding: 2px 7px;
+    border-radius: 100px;
+    font-size: 10px; font-weight: 600;
+    border: 1px solid;
+  }
+  .ag-api    { background: #e8f0fe; color: #1a56db; border-color: #c3d8fd; }
+  .ag-rule   { background: #fce8f3; color: #9c1c64; border-color: #f5c6e2; }
+  .ag-tgn    { background: #e8fef0; color: #0a7c3e; border-color: #b3f0cc; }
+  .ag-embed  { background: #fff8e1; color: #b45309; border-color: #fde68a; }
+  .ag-batch  { background: #f3e8ff; color: #6d28d9; border-color: #ddd6fe; }
+  .ag-mlops  { background: #fee8e8; color: #b91c1c; border-color: #fecaca; }
+  .ag-infra  { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+
+  /* ---- Latency table ---- */
+  .lat-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+  .lat-table th {
+    text-align: left;
+    color: var(--color-text-muted);
+    font-weight: 600;
+    padding: 6px 10px;
+    border-bottom: 2px solid var(--color-border);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .lat-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--color-border-light);
+    color: var(--color-text);
+    vertical-align: top;
+    font-size: 12px;
+  }
+  .lat-table tr:last-child td { border-bottom: none; }
+  .lat-table tr:hover td { background: var(--color-surface-hover); }
+  .mono { font-family: var(--font-mono); }
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 100px;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .badge-fast   { background: #d9ffd6; color: #00471e; }
+  .badge-ok     { background: #fff8e1; color: #b45309; }
+  .badge-slow   { background: #fee2e2; color: #b91c1c; }
+
+  /* ---- Flow boxes ---- */
+  .flow-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .flow-box {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-light);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .flow-box h4 {
+    margin: 0 0 10px;
+    font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--color-text-secondary);
+  }
+  .flow-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 7px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    line-height: 1.45;
+  }
+  .flow-item i { color: var(--color-primary); margin-top: 1px; font-size: 11px; flex-shrink: 0; }
+  .flow-item strong { color: var(--color-text); }
+
+  .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--color-primary);
+    color: #fff;
+    font-size: 10px; font-weight: 700;
+    flex-shrink: 0; margin-top: 1px;
+  }
+
+  @media (max-width: 640px) {
+    .flow-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1>TGN Fraud Detection + Rule Engine</h1>
+<p class="subtitle">Production-Grade AWS Architecture &mdash; TGN Learn &amp; Ensemble, based on codebase analysis (June 2026)</p>
+
+<!-- ===================== PIPELINE FLOW ===================== -->
+<div class="pipeline">
+  <div class="pipe-step">
+    <div class="pipe-icon c1"><i class="fa-solid fa-circle-nodes"></i></div>
+    <div class="pipe-label">API Gateway</div>
+    <div class="pipe-sub">POST /score</div>
+  </div>
+  <div class="pipe-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+  <div class="pipe-step">
+    <div class="pipe-icon c2"><i class="fa-solid fa-scale-balanced"></i></div>
+    <div class="pipe-label">Rule Evaluator</div>
+    <div class="pipe-sub">DAX &rarr; verdict</div>
+  </div>
+  <div class="pipe-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+  <div class="pipe-step">
+    <div class="pipe-icon c4"><i class="fa-solid fa-bolt"></i></div>
+    <div class="pipe-label">Embedding Cache</div>
+    <div class="pipe-sub">ElastiCache Redis</div>
+  </div>
+  <div class="pipe-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+  <div class="pipe-step">
+    <div class="pipe-icon c3"><i class="fa-solid fa-brain"></i></div>
+    <div class="pipe-label">TGN Inference</div>
+    <div class="pipe-sub">SageMaker GPU</div>
+  </div>
+  <div class="pipe-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+  <div class="pipe-step">
+    <div class="pipe-icon c5"><i class="fa-solid fa-code-merge"></i></div>
+    <div class="pipe-label">HybridScorer</div>
+    <div class="pipe-sub">TGN &oplus; Rules</div>
+  </div>
+  <div class="pipe-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+  <div class="pipe-step">
+    <div class="pipe-icon c6"><i class="fa-solid fa-database"></i></div>
+    <div class="pipe-label">Audit Log</div>
+    <div class="pipe-sub">DynamoDB async</div>
+  </div>
+  <div class="pipe-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+  <div class="pipe-step">
+    <div class="pipe-icon c7"><i class="fa-solid fa-shield-halved"></i></div>
+    <div class="pipe-label">Response</div>
+    <div class="pipe-sub">risk_tier + why</div>
+  </div>
+</div>
+
+<!-- ===================== COMPUTE LAYER ===================== -->
+<div class="section-header"><i class="fa-solid fa-microchip"></i> Compute Layer</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8f0fe; color:#1a56db;"><i class="fa-solid fa-circle-nodes"></i></div>
+      <div>
+        <div class="svc-name">Amazon API Gateway</div>
+        <div class="svc-tier">Ingress — auth, throttling, routing</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Single entry point for all scoring requests. Provides <strong>request throttling</strong> (10k RPS cap to protect SageMaker), <strong>JWT authorisation</strong> via Cognito (so only authenticated Streamlit sessions and downstream systems can call <code>POST /score</code>), and <strong>request/response caching</strong> for repeated identical transactions. A WebSocket stage supports real-time score streaming back to the Streamlit UI. <strong>Usage Plans</strong> give separate rate limits to the Rule Builder UI vs. batch scoring callers.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-api">All modules</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8fef0; color:#0a7c3e;"><i class="fa-solid fa-bolt"></i></div>
+      <div>
+        <div class="svc-name">AWS Lambda &mdash; 3 functions</div>
+        <div class="svc-tier">score-transaction · rule-evaluator · rule-crud</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Three independent, stateless functions map exactly to the three code boundaries in the codebase: <code>HybridScorer</code>, <code>RuleEvaluator</code>, and the Rule Builder CRUD API. They are kept separate so rule evaluation (~1ms, pure Python) is <em>never</em> blocked waiting for TGN inference (~40ms). <strong>Key design rule:</strong> <code>rule-evaluator</code> fires first; a <code>BLOCK</code> verdict short-circuits the flow and SageMaker is never invoked — saving cost and latency. Each function has its own IAM execution role scoped to only the resources it touches.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-rule">Rule Engine</span>
+      <span class="mod-tag ag-tgn">TGN Scorer</span>
+      <span class="mod-tag ag-api">HybridScorer</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fce8f3; color:#9c1c64;"><i class="fa-solid fa-brain"></i></div>
+      <div>
+        <div class="svc-name">Amazon SageMaker Real-Time Endpoint</div>
+        <div class="svc-tier">TGN PyTorch model &mdash; GPU inference</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Lambda cannot run the <code>TGNFraudDetector</code> — it's a PyTorch GNN with a 512MB+ model state and requires a GPU for sub-100ms latency. SageMaker hosts the trained <code>.pt</code> checkpoint from S3 on a <code>ml.g4dn.xlarge</code> instance. The endpoint exposes a JSON API that the <code>score-transaction</code> Lambda calls via <code>sagemaker-runtime:InvokeEndpoint</code>. <strong>Application Auto Scaling</strong> scales the endpoint out on invocation count, and <strong>multi-model endpoints</strong> allow both the Standard TGN and Ensemble TGN checkpoints to co-reside on the same instance to reduce cost.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-tgn">TGN Scorer</span>
+      <span class="mod-tag ag-batch">Ensemble</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#f3e8ff; color:#6d28d9;"><i class="fa-solid fa-docker" style="font-family:var(--font-mono); font-size:14px; font-style:normal; font-weight:700;">ECR</i></div>
+      <div>
+        <div class="svc-name">AWS Batch + ECR</div>
+        <div class="svc-tier">Nightly embedding pre-computation</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> The <code>BatchEmbedder</code> in <code>ensemble/embedding/batch_embedder.py</code> runs the full temporal graph to pre-compute entity embeddings. This job takes 10–30 minutes depending on graph size — well beyond Lambda's 15-minute limit — and needs GPU. The Dockerised PyTorch job is stored in <strong>ECR</strong> and run as an <strong>AWS Batch</strong> job on a spot-priced <code>ml.g4dn.xlarge</code> compute environment triggered nightly by EventBridge Scheduler. Outputs are written to S3 and synced to ElastiCache by a post-job Lambda.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-embed">Batch Embedder</span>
+      <span class="mod-tag ag-batch">Ensemble</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===================== CACHING LAYER ===================== -->
+<div class="section-header"><i class="fa-solid fa-bolt"></i> Caching Layer</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fff8e1; color:#b45309;"><i class="fa-solid fa-memory"></i></div>
+      <div>
+        <div class="svc-name">Amazon ElastiCache (Redis)</div>
+        <div class="svc-tier">Sub-ms entity embedding lookup</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> The TGN Lambda Architecture (from <code>ENSEMBLE_DESIGN.md</code>) separates offline embedding pre-computation from real-time inference. At scoring time, the <code>score-transaction</code> Lambda fetches <code>emb:{src_id}</code> and <code>emb:{dst_id}</code> from Redis (each a float32 vector) before calling SageMaker. This avoids full neighbourhood expansion at inference time, cutting P99 latency from ~200ms to ~50ms. Keys have a <strong>24-hour TTL</strong> refreshed by the nightly Batch job. <strong>Redis Cluster mode</strong> with 3 shards provides horizontal scale.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-embed">Embedding Cache</span>
+      <span class="mod-tag ag-tgn">TGN Scorer</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8fef0; color:#0a7c3e;"><i class="fa-solid fa-gauge-high"></i></div>
+      <div>
+        <div class="svc-name">Amazon DAX (DynamoDB Accelerator)</div>
+        <div class="svc-tier">Microsecond rule set reads</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> The <code>rule-evaluator</code> Lambda reads the full active rule set on <em>every transaction</em>. Without caching, this would hammer DynamoDB at 10k+ TPS. DAX sits in front of the <code>fraud-rules</code> DynamoDB table and serves the rule set from in-memory cache with microsecond reads. The rule set is cached with a <strong>5-minute TTL</strong> — acceptable staleness for rules that rarely change. When <code>rule-crud</code> Lambda updates a rule, it writes through DAX, ensuring cache invalidation is immediate.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-rule">Rule Engine</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===================== STORAGE LAYER ===================== -->
+<div class="section-header"><i class="fa-solid fa-database"></i> Storage Layer</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8f0fe; color:#1a56db;"><i class="fa-solid fa-table-cells"></i></div>
+      <div>
+        <div class="svc-name">Amazon DynamoDB &mdash; 2 tables</div>
+        <div class="svc-tier">fraud-rules · score-audit</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Two tables serve distinct purposes on the hot path. <code>fraud-rules</code> stores rule definitions (conditions JSON, verdict, priority, enabled flag) — the Rule Builder UI reads and writes here via <code>rule-crud</code> Lambda. <code>score-audit</code> records every scoring decision (<code>tx_id</code>, TGN score, rule verdict, final tier, timestamp) for compliance, model monitoring, and drift detection. <strong>DynamoDB Streams</strong> on <code>fraud-rules</code> trigger DAX cache invalidation; Streams on <code>score-audit</code> feed the CloudWatch drift metrics pipeline.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-rule">Rule Engine</span>
+      <span class="mod-tag ag-tgn">TGN Scorer</span>
+      <span class="mod-tag ag-api">HybridScorer</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fce8f3; color:#9c1c64;"><i class="fa-solid fa-bucket"></i></div>
+      <div>
+        <div class="svc-name">Amazon S3 &mdash; 3 buckets</div>
+        <div class="svc-tier">model-artifacts · transaction-data · embeddings-batch</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Three buckets map to three data lifecycle stages. <code>tgn-model-artifacts</code> stores versioned <code>.pt</code> checkpoints produced by SageMaker Pipelines — SageMaker loads the model from here on endpoint deployment. <code>tgn-transaction-data</code> receives raw CSV uploads from the <em>Upload CSV</em> page (page 5), partitioned by date; an S3 Event Notification triggers a retraining pipeline check when new labelled data arrives. <code>tgn-embeddings-batch</code> is the staging area between the nightly Batch job and ElastiCache sync. All buckets use <strong>S3 Intelligent-Tiering</strong> and <strong>Server-Side Encryption (SSE-KMS)</strong>.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-mlops">MLOps Pipeline</span>
+      <span class="mod-tag ag-embed">Batch Embedder</span>
+      <span class="mod-tag ag-batch">Ensemble</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8fef0; color:#0a7c3e;"><i class="fa-solid fa-lock"></i></div>
+      <div>
+        <div class="svc-name">AWS Secrets Manager</div>
+        <div class="svc-tier">Credential management for all Lambdas</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Lambda functions need Redis connection strings, SageMaker endpoint ARNs, and DynamoDB table names without hardcoding. Secrets Manager stores these as versioned secrets and rotates them automatically. Lambdas fetch at cold-start and cache in-memory for the function lifetime, so there's no per-invocation secrets call. <strong>Resource-based policies</strong> restrict each secret to only the Lambda IAM role that needs it — e.g., only <code>score-transaction</code> can read the Redis URL, not <code>rule-evaluator</code>.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-tgn">TGN Scorer</span>
+      <span class="mod-tag ag-rule">Rule Engine</span>
+      <span class="mod-tag ag-infra">All Lambdas</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===================== ML PLATFORM ===================== -->
+<div class="section-header"><i class="fa-solid fa-flask"></i> ML Platform &amp; MLOps</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fee8e8; color:#b91c1c;"><i class="fa-solid fa-code-branch"></i></div>
+      <div>
+        <div class="svc-name">Amazon SageMaker Pipelines + Model Registry</div>
+        <div class="svc-tier">Automated retraining &amp; deployment</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> When new labelled fraud data arrives in S3, the <code>TGNTrainer</code> workflow must rerun automatically. SageMaker Pipelines defines the steps: <strong>Data Validation</strong> → <strong>Training</strong> (running <code>tgn_learn/training/trainer.py</code>) → <strong>Evaluation</strong> (AUPRC &ge; threshold check) → <strong>Conditional Registration</strong> (only <code>Approved</code> models proceed) → <strong>Endpoint Update</strong>. Model Registry maintains full version history so you can roll back to a previous checkpoint instantly. Triggered by EventBridge when labelled data volume exceeds a configurable threshold.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-mlops">MLOps Pipeline</span>
+      <span class="mod-tag ag-tgn">TGN Scorer</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#f3e8ff; color:#6d28d9;"><i class="fa-solid fa-chart-scatter"></i></div>
+      <div>
+        <div class="svc-name">SageMaker Model Monitor</div>
+        <div class="svc-tier">Data drift + prediction quality monitoring</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> The <code>drift_monitor.py</code> and <code>threshold_adapter.py</code> components in <code>ensemble/maintenance/</code> are the production version of the manual drift detection in the Streamlit app. Model Monitor runs as a scheduled job capturing the endpoint's inference inputs/outputs, comparing them against a baseline captured at training time. When <strong>feature distribution shift</strong> (e.g. amount ranges changing due to inflation) or <strong>prediction drift</strong> (model confidence degrading) is detected, CloudWatch alarms fire and the retraining pipeline is triggered automatically.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-batch">Ensemble</span>
+      <span class="mod-tag ag-mlops">MLOps Pipeline</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===================== ORCHESTRATION ===================== -->
+<div class="section-header"><i class="fa-solid fa-diagram-project"></i> Orchestration &amp; Scheduling</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fff8e1; color:#b45309;"><i class="fa-solid fa-calendar-check"></i></div>
+      <div>
+        <div class="svc-name">Amazon EventBridge Scheduler</div>
+        <div class="svc-tier">Nightly batch + conditional retraining triggers</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> EventBridge is the decoupling layer between all async workflows. Three rules: (1) <code>cron(0 2 * * ? *)</code> triggers the nightly AWS Batch embedding job; (2) <code>S3 PutObject</code> events on <code>tgn-transaction-data</code> trigger a retraining eligibility check in SageMaker Pipelines; (3) <code>DynamoDB Streams</code> from <code>fraud-rules</code> trigger a Lambda that invalidates DAX cache when a rule is updated. EventBridge's <strong>dead-letter queue</strong> support ensures missed triggers are retried.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-embed">Batch Embedder</span>
+      <span class="mod-tag ag-mlops">MLOps Pipeline</span>
+      <span class="mod-tag ag-rule">Rule Engine</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8fef0; color:#0a7c3e;"><i class="fa-solid fa-sitemap"></i></div>
+      <div>
+        <div class="svc-name">AWS Step Functions (Express)</div>
+        <div class="svc-tier">Batch scoring orchestration</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> The <em>Batch Score</em> tab (page 4, <code>tab_batch</code>) scores thousands of transactions from a CSV upload. In production, this is too large for a single Lambda invocation. A Step Functions <strong>Express Workflow</strong> fans out: S3 CSV → SQS chunks → parallel Lambda invocations → aggregated results written back to S3. Express Workflows are priced per-execution (not per-state-transition), making them cost-effective for high-throughput batch jobs. Results are streamed back to the UI via S3 presigned URLs.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-tgn">TGN Scorer</span>
+      <span class="mod-tag ag-rule">Rule Engine</span>
+      <span class="mod-tag ag-batch">Ensemble</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===================== SECURITY ===================== -->
+<div class="section-header"><i class="fa-solid fa-shield-halved"></i> Security &amp; Access Control</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8f0fe; color:#1a56db;"><i class="fa-solid fa-user-lock"></i></div>
+      <div>
+        <div class="svc-name">Amazon Cognito</div>
+        <div class="svc-tier">Role-based access to Rule Builder UI</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> The Rule Builder (page 8) must enforce two access tiers: <strong>Analyst</strong> (create/edit/test rules, cannot enable <code>BLOCK</code> verdict) and <strong>Risk Manager</strong> (full access including enabling hard-block rules). Cognito User Pools provide the user directory and JWT token issuing; API Gateway validates the token on every <code>rule-crud</code> call and checks the <code>role</code> claim before allowing a <code>BLOCK</code> verdict rule to be enabled. This prevents an analyst from accidentally (or maliciously) blocking all transactions with a misconfigured rule.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-rule">Rule Builder UI</span>
+      <span class="mod-tag ag-api">API Gateway</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fce8f3; color:#9c1c64;"><i class="fa-solid fa-key"></i></div>
+      <div>
+        <div class="svc-name">AWS KMS (CMK)</div>
+        <div class="svc-tier">Encryption at rest — transactions &amp; model artefacts</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Transaction data and fraud labels are regulated financial data. All three S3 buckets and both DynamoDB tables must use <strong>Customer Managed Keys (CMK)</strong> — not AWS-managed keys — so that every decryption event appears in CloudTrail with a full audit trail. Separate CMKs per data tier (raw transactions vs. model artefacts vs. audit log) means a compromised key for one tier doesn't expose the others. Key policies restrict usage to only the Lambda and SageMaker IAM roles that legitimately need access.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-infra">S3 · DynamoDB · ElastiCache</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8fef0; color:#0a7c3e;"><i class="fa-solid fa-network-wired"></i></div>
+      <div>
+        <div class="svc-name">Amazon VPC + Interface Endpoints</div>
+        <div class="svc-tier">Private network — no public internet for data plane</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> All Lambda functions, the SageMaker endpoint, ElastiCache, and DynamoDB should reside in a private VPC with <strong>no internet gateway</strong>. AWS service traffic (S3, DynamoDB, SageMaker, Bedrock, Secrets Manager) routes through <strong>VPC Interface Endpoints</strong> — never traversing the public internet. This eliminates the attack surface of data exfiltration via the network path. SageMaker notebooks for model development live in a separate VPC peered to the production VPC with appropriate Security Group rules.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-infra">All services</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fee8e8; color:#b91c1c;"><i class="fa-solid fa-eye"></i></div>
+      <div>
+        <div class="svc-name">Amazon GuardDuty + AWS WAF</div>
+        <div class="svc-tier">Threat detection on the system itself</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> A fraud detection system is itself a target. <strong>GuardDuty</strong> monitors for anomalous API calls (e.g., unexpected <code>sagemaker:InvokeEndpoint</code> from an unrecognised principal, S3 exfiltration patterns on the model artefacts bucket). <strong>AWS WAF</strong> sits in front of API Gateway to block SQL injection, malformed JSON payloads, and rate-abuse from IP ranges. GuardDuty findings feed into <strong>Security Hub</strong> alongside Inspector (container image vulnerability scanning for the Batch ECR image) for a unified security posture view.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-api">API Gateway</span>
+      <span class="mod-tag ag-infra">System-wide</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===================== OBSERVABILITY ===================== -->
+<div class="section-header"><i class="fa-solid fa-chart-line"></i> Observability</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8f0fe; color:#1a56db;"><i class="fa-solid fa-chart-bar"></i></div>
+      <div>
+        <div class="svc-name">Amazon CloudWatch (Logs + Metrics + Alarms)</div>
+        <div class="svc-tier">Model drift + latency + rule health</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Four custom metric dimensions map to the drift signals in <code>drift_monitor.py</code> and <code>threshold_adapter.py</code>: <code>FraudRate_7d</code> rolling average (population shift detection), <code>TGNScore_p95</code> (model confidence degradation), <code>RuleHitRate</code> per rule ID (stale or over-triggering rules), and <code>SageMakerEndpoint/Latency</code> (inference slowdown). <strong>Embedded Metric Format (EMF)</strong> in Lambda handlers writes structured log lines that become queryable metrics automatically — zero overhead. CloudWatch Dashboards give the SOC a live view of fraud rate, block rate, and model health.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-tgn">TGN Scorer</span>
+      <span class="mod-tag ag-rule">Rule Engine</span>
+      <span class="mod-tag ag-batch">Ensemble</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fce8f3; color:#9c1c64;"><i class="fa-solid fa-binoculars"></i></div>
+      <div>
+        <div class="svc-name">AWS X-Ray</div>
+        <div class="svc-tier">Distributed tracing across Lambda &amp; SageMaker</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> The scoring path chains API Gateway → two Lambda invocations → ElastiCache → SageMaker. X-Ray traces the complete path of a single transaction through all hops — critical for diagnosing P99 latency spikes (e.g., "Redis cold key added 15ms on this call" or "SageMaker scaled down and the cold start added 300ms"). Enable <strong>Active Tracing</strong> on both Lambda functions and the API Gateway stage. The trace shows exactly where time is spent, which is especially important when debugging the <strong>BLOCK path</strong> (should be &lt;2ms end-to-end).
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-tgn">TGN Scorer</span>
+      <span class="mod-tag ag-rule">Rule Engine</span>
+      <span class="mod-tag ag-api">API Gateway</span>
+    </div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8fef0; color:#0a7c3e;"><i class="fa-solid fa-bell"></i></div>
+      <div>
+        <div class="svc-name">Amazon SNS</div>
+        <div class="svc-tier">Drift alerts &amp; MLOps notifications</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> CloudWatch Alarms publish to SNS topics which fan out to multiple subscribers: <strong>email</strong> for the risk team (fraud rate spike), <strong>Slack webhook</strong> for the ML team (model drift detected, retraining triggered), and a <strong>PagerDuty Lambda</strong> for P0 incidents (endpoint unavailable, all transactions returning CRITICAL). SNS decouples alarm firing from notification routing — you can add new subscribers (SIEM, ticketing system) without changing the alarms. Separate topics per severity (INFO, WARNING, CRITICAL) prevent alert fatigue.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-mlops">MLOps Pipeline</span>
+      <span class="mod-tag ag-infra">CloudWatch Alarms</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===================== INFRASTRUCTURE AS CODE ===================== -->
+<div class="section-header"><i class="fa-solid fa-code"></i> Infrastructure as Code (AWS CDK)</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#f3e8ff; color:#6d28d9;"><i class="fa-solid fa-layer-group"></i></div>
+      <div>
+        <div class="svc-name">AWS CDK (Python) &mdash; 5 stacks</div>
+        <div class="svc-tier">api · data · ml · batch · monitoring</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> All infrastructure deployed as code from a <code>cdk/</code> directory in the repo root, matching the isolation architecture principle in <code>ENSEMBLE_DESIGN.md</code>. Five stacks: <code>api_stack</code> (API Gateway + 3 Lambda functions), <code>data_stack</code> (DynamoDB + ElastiCache + DAX + Secrets Manager), <code>ml_stack</code> (SageMaker endpoint + Model Registry), <code>batch_stack</code> (AWS Batch + ECR + EventBridge), <code>monitoring_stack</code> (CloudWatch + Alarms + SNS + X-Ray). Stacks are ordered by dependency — <code>data_stack</code> is a dependency of <code>api_stack</code>, which is a dependency of <code>monitoring_stack</code>.
+    </div>
+    <div class="modules-used">
+      <span class="mod-tag ag-infra">All stacks</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===================== REQUEST FLOW ===================== -->
+<div class="section-header"><i class="fa-solid fa-route"></i> End-to-End Request Flow &amp; Latency Budget</div>
+
+<div class="flow-grid" style="margin-bottom: 24px;">
+  <div class="flow-box">
+    <h4>Normal scoring path (~50ms P99)</h4>
+    <div class="flow-item"><span class="step-num">1</span><div><strong>API Gateway</strong> — validates JWT, routes to <code>score-transaction</code> Lambda</div></div>
+    <div class="flow-item"><span class="step-num">2</span><div><strong>rule-evaluator</strong> Lambda reads active rule set from DAX (&lt;1ms)</div></div>
+    <div class="flow-item"><span class="step-num">3</span><div>Verdict is <code>PASS</code> or <code>ESCALATE</code> — proceed to TGN</div></div>
+    <div class="flow-item"><span class="step-num">4</span><div><strong>ElastiCache</strong> returns <code>src_emb</code> + <code>dst_emb</code> (&lt;1ms)</div></div>
+    <div class="flow-item"><span class="step-num">5</span><div><strong>SageMaker</strong> endpoint runs TGN inference (~40ms GPU)</div></div>
+    <div class="flow-item"><span class="step-num">6</span><div><strong>HybridScorer</strong> fuses TGN score + rule verdict → final <code>RiskTier</code></div></div>
+    <div class="flow-item"><span class="step-num">7</span><div>Result written to <code>score-audit</code> DynamoDB (async, fire-and-forget)</div></div>
+    <div class="flow-item"><span class="step-num">8</span><div>Response returned: <code>risk_tier</code> + <code>explanation</code> signals</div></div>
+  </div>
+
+  <div class="flow-box">
+    <h4>BLOCK path (~2ms P99)</h4>
+    <div class="flow-item"><span class="step-num">1</span><div><strong>API Gateway</strong> — validates JWT, routes to <code>score-transaction</code> Lambda</div></div>
+    <div class="flow-item"><span class="step-num">2</span><div><strong>rule-evaluator</strong> Lambda reads active rule set from DAX (&lt;1ms)</div></div>
+    <div class="flow-item"><span class="step-num">3</span><div>Verdict is <code>BLOCK</code> — <em>short-circuit: SageMaker never invoked</em></div></div>
+    <div class="flow-item"><span class="step-num">4</span><div><strong>HybridScorer</strong> returns synthetic <code>CRITICAL</code> result immediately</div></div>
+    <div class="flow-item"><span class="step-num">5</span><div>Audit record written + response returned (~2ms total)</div></div>
+  </div>
+</div>
+
+<!-- ===================== LATENCY TABLE ===================== -->
+<table class="lat-table">
+  <thead>
+    <tr>
+      <th>Step</th>
+      <th>Service</th>
+      <th>Target Latency</th>
+      <th>Path</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>JWT validation</td>
+      <td>API Gateway + Cognito</td>
+      <td><span class="badge badge-fast mono">&lt;1ms</span></td>
+      <td>Both paths</td>
+      <td>Cached authoriser; no round-trip after first call</td>
+    </tr>
+    <tr>
+      <td>Rule set read</td>
+      <td>DAX (in-memory)</td>
+      <td><span class="badge badge-fast mono">&lt;1ms</span></td>
+      <td>Both paths</td>
+      <td>5-min TTL cache; invalidated on rule updates</td>
+    </tr>
+    <tr>
+      <td>Rule evaluation</td>
+      <td>Lambda (Python)</td>
+      <td><span class="badge badge-fast mono">~1ms</span></td>
+      <td>Both paths</td>
+      <td>Pure Python priority-sorted loop, no I/O</td>
+    </tr>
+    <tr>
+      <td>Embedding lookup</td>
+      <td>ElastiCache Redis</td>
+      <td><span class="badge badge-fast mono">&lt;1ms</span></td>
+      <td>Normal path</td>
+      <td>24h TTL; nightly Batch job refreshes vectors</td>
+    </tr>
+    <tr>
+      <td>TGN inference</td>
+      <td>SageMaker (GPU)</td>
+      <td><span class="badge badge-ok mono">~40ms</span></td>
+      <td>Normal path</td>
+      <td>ml.g4dn.xlarge; pre-warmed to avoid cold start</td>
+    </tr>
+    <tr>
+      <td>Score fusion</td>
+      <td>Lambda (Python)</td>
+      <td><span class="badge badge-fast mono">&lt;1ms</span></td>
+      <td>Both paths</td>
+      <td>Tier mapping lookup, no I/O</td>
+    </tr>
+    <tr>
+      <td>Audit write</td>
+      <td>DynamoDB (async)</td>
+      <td><span class="badge badge-fast mono">async</span></td>
+      <td>Both paths</td>
+      <td>Fire-and-forget; does not block response</td>
+    </tr>
+    <tr>
+      <td><strong>Total P99 (normal)</strong></td>
+      <td></td>
+      <td><span class="badge badge-ok mono">~50ms</span></td>
+      <td>Normal path</td>
+      <td>Well within 100ms real-time decisioning threshold</td>
+    </tr>
+    <tr>
+      <td><strong>Total P99 (BLOCK)</strong></td>
+      <td></td>
+      <td><span class="badge badge-fast mono">~2ms</span></td>
+      <td>BLOCK path</td>
+      <td>SageMaker never called; maximum cost saving</td>
+    </tr>
+  </tbody>
+</table>
+
+</body>
+</html>

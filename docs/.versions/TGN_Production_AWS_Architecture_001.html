@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Production AWS Architecture — TGN Ensemble Fraud Detection</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+  body {
+    background: var(--color-bg, #f2f1f4);
+    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    color: var(--color-text, #1a1a2e);
+    margin: 0;
+    padding: 20px 24px 40px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px; color: var(--color-text, #1a1a2e); }
+  .subtitle { color: var(--color-text-secondary, #5c6778); font-size: 13px; margin-bottom: 24px; }
+
+  /* ---- Pipeline Flow ---- */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--color-bg-secondary, #f4f5f7);
+    border: 1px solid var(--color-border-light, #e0e3e8);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 28px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+  .pipe-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    min-width: 96px;
+    flex-shrink: 0;
+  }
+  .pipe-icon {
+    width: 42px; height: 42px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    margin-bottom: 6px;
+  }
+  .pipe-label { font-size: 11px; font-weight: 600; color: var(--color-text, #1a1a2e); }
+  .pipe-sub { font-size: 10px; color: var(--color-text-muted, #888); margin-top: 2px; }
+  .pipe-arrow {
+    flex-shrink: 0;
+    color: var(--color-text-muted, #aaa);
+    font-size: 18px;
+    margin: 0 6px;
+    margin-bottom: 20px;
+  }
+  .c1 { background: #e8f4fd; color: #0066cc; }
+  .c2 { background: #fff3e0; color: #b45309; }
+  .c3 { background: #e8f0fe; color: #1a56db; }
+  .c4 { background: #e8fef0; color: #0a7c3e; }
+  .c5 { background: #f3e8ff; color: #6d28d9; }
+  .c6 { background: #fee8e8; color: #b91c1c; }
+  .c7 { background: #fce8f3; color: #9c1c64; }
+  .c8 { background: #e8fef8; color: #0a7c5e; }
+
+  /* ---- Latency badges ---- */
+  .latency-bar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: var(--color-bg-secondary, #f4f5f7);
+    border: 1px solid var(--color-border-light, #e0e3e8);
+    border-radius: 10px;
+    padding: 12px 18px;
+    margin-bottom: 28px;
+    align-items: center;
+  }
+  .latency-bar .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted, #888); margin-right: 4px; }
+  .lat-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px;
+    border-radius: 100px;
+    font-size: 11px; font-weight: 600;
+  }
+  .lat-green { background: #d4f7e0; color: #0a5c2e; }
+  .lat-amber { background: #fff3cd; color: #7a4e00; }
+  .lat-blue  { background: #dbeafe; color: #1e40af; }
+
+  /* ---- Section headers ---- */
+  .section-header {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--color-text-secondary, #5c6778);
+    margin: 28px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--color-border, #d0d4db);
+  }
+  .section-header i { font-size: 14px; }
+
+  /* ---- Service cards grid ---- */
+  .services-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 14px;
+  }
+  .service-card {
+    background: var(--color-bg-secondary, #f8f9fb);
+    border: 1px solid var(--color-border-light, #e4e7ec);
+    border-radius: 10px;
+    padding: 14px 16px;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    cursor: default;
+  }
+  .service-card:hover {
+    border-color: var(--color-primary, #0052cc);
+    box-shadow: 0 2px 8px rgba(0,82,204,0.10);
+  }
+  .svc-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .svc-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .svc-name { font-size: 13px; font-weight: 700; color: var(--color-text, #1a1a2e); }
+  .svc-tier { font-size: 10px; font-weight: 600; color: var(--color-text-muted, #888); text-transform: uppercase; letter-spacing: 0.05em; }
+  .svc-why {
+    font-size: 12px;
+    color: var(--color-text-secondary, #5c6778);
+    margin-bottom: 8px;
+    line-height: 1.5;
+  }
+  .svc-why strong { color: var(--color-text, #1a1a2e); }
+  code { background: var(--color-bg-tertiary, #eee); padding: 1px 4px; border-radius: 3px; font-family: monospace; font-size: 11px; }
+  .layer-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .layer-tag {
+    display: inline-flex; align-items: center;
+    padding: 2px 7px;
+    border-radius: 100px;
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .t-ingest  { background: #e8f4fd; color: #0066cc; }
+  .t-graph   { background: #e8fef0; color: #0a7c3e; }
+  .t-memory  { background: #fff3e0; color: #92400e; }
+  .t-infer   { background: #f3e8ff; color: #6d28d9; }
+  .t-train   { background: #e0f0ff; color: #1e40af; }
+  .t-drift   { background: #fce8f3; color: #9c1c64; }
+  .t-api     { background: #e8fef8; color: #0a7c5e; }
+  .t-analyst { background: #fff8e1; color: #b45309; }
+
+  /* ---- Cost table ---- */
+  .cost-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  .cost-table th { text-align: left; color: var(--color-text-muted, #888); font-weight: 600; padding: 6px 10px; border-bottom: 2px solid var(--color-border, #d0d4db); }
+  .cost-table td { padding: 6px 10px; border-bottom: 1px solid var(--color-border-light, #eee); }
+  .cost-table tr:hover td { background: var(--color-bg-tertiary, #f4f4f6); }
+  .cost-table tr:last-child td { font-weight: 700; border-top: 2px solid var(--color-border, #d0d4db); border-bottom: none; }
+  .cost-total { color: var(--color-primary, #0052cc); }
+
+  /* ---- Design decisions callout ---- */
+  .decision-box {
+    background: var(--color-bg-secondary, #f8f9fb);
+    border: 1px solid var(--color-border-light, #e4e7ec);
+    border-left: 4px solid var(--color-primary, #0052cc);
+    border-radius: 0 10px 10px 0;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: var(--color-text-secondary, #5c6778);
+    line-height: 1.6;
+  }
+  .decision-box strong { color: var(--color-text, #1a1a2e); font-size: 12px; }
+
+  /* ---- Research badge ---- */
+  .research-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .research-table th { text-align: left; color: var(--color-text-muted, #888); font-weight: 600; padding: 6px 10px; border-bottom: 2px solid var(--color-border, #d0d4db); }
+  .research-table td { padding: 6px 10px; border-bottom: 1px solid var(--color-border-light, #eee); }
+  .research-table tr:hover td { background: var(--color-bg-tertiary, #f4f4f6); }
+  .badge-prod { background: #d4f7e0; color: #0a5c2e; border-radius: 100px; padding: 1px 8px; font-size: 10px; font-weight: 700; }
+  .badge-cred { background: #dbeafe; color: #1e40af; border-radius: 100px; padding: 1px 8px; font-size: 10px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<h1>TGN Ensemble Fraud Detection</h1>
+<p class="subtitle">Production-Grade AWS Architecture — TGN + BRIGHT Lambda + TGN-SEAL + PRAGMA · June 2026</p>
+
+<!-- ===== LATENCY BUDGET ===== -->
+<div class="latency-bar">
+  <span class="lbl">Latency Budget:</span>
+  <span class="lat-green"><i class="fa-solid fa-circle-check"></i> Pass 1 (100% txns): ~50ms P99</span>
+  <span class="lat-amber"><i class="fa-solid fa-triangle-exclamation"></i> Pass 2 (3% txns): ~100ms P99</span>
+  <span class="lat-blue"><i class="fa-solid fa-circle-info"></i> Target: &lt;100ms end-to-end</span>
+  <span class="lat-blue"><i class="fa-solid fa-bolt"></i> Throughput: 1K–10K TPS</span>
+  <span class="lat-blue"><i class="fa-solid fa-database"></i> Scale: 50M+ active entities</span>
+</div>
+
+<!-- ===== PIPELINE FLOW ===== -->
+<div class="pipeline">
+  <div class="pipe-step">
+    <div class="pipe-icon c1"><i class="fa-solid fa-credit-card"></i></div>
+    <div class="pipe-label">Transaction</div>
+    <div class="pipe-sub">Core Banking</div>
+  </div>
+  <div class="pipe-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+  <div class="pipe-step">
+    <div class="pipe-icon c2"><i class="fa-solid fa-water"></i></div>
+    <div class="pipe-label">Ingestion</div>
+    <div class="pipe-sub">Kinesis → Lambda</div>
+  </div>
+  <div class="pipe-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+  <div class="pipe-step">
+    <div class="pipe-icon c3"><i class="fa-solid fa-diagram-project"></i></div>
+    <div class="pipe-label">Graph Store</div>
+    <div class="pipe-sub">Neptune + Redis</div>
+  </div>
+  <div class="pipe-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+  <div class="pipe-step">
+    <div class="pipe-icon c4"><i class="fa-solid fa-bolt"></i></div>
+    <div class="pipe-label">Pass 1 Scoring</div>
+    <div class="pipe-sub">TGN + RF (~20ms)</div>
+  </div>
+  <div class="pipe-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+  <div class="pipe-step">
+    <div class="pipe-icon c5"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
+    <div class="pipe-label">Pass 2 Structural</div>
+    <div class="pipe-sub">TGN-SEAL (+50ms)</div>
+  </div>
+  <div class="pipe-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+  <div class="pipe-step">
+    <div class="pipe-icon c6"><i class="fa-solid fa-shield-halved"></i></div>
+    <div class="pipe-label">Decision</div>
+    <div class="pipe-sub">Risk Tier + Explain</div>
+  </div>
+  <div class="pipe-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+  <div class="pipe-step">
+    <div class="pipe-icon c7"><i class="fa-solid fa-chart-line"></i></div>
+    <div class="pipe-label">Analyst Tooling</div>
+    <div class="pipe-sub">Dashboard + KB</div>
+  </div>
+</div>
+
+<!-- ===== LAYER 1: INGESTION ===== -->
+<div class="section-header"><i class="fa-solid fa-water"></i> Layer 1 — Transaction Ingestion</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8f4fd; color:#0066cc;"><i class="fa-solid fa-stream"></i></div>
+      <div>
+        <div class="svc-name">Amazon Kinesis Data Streams</div>
+        <div class="svc-tier">Event ingestion · On-Demand mode</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Real-time event ingestion at 1K–10K TPS with ordering guarantees within a shard. On-Demand mode auto-scales without pre-provisioning shards. Kinesis provides <strong>replay capability</strong> — if a model update requires reprocessing historical events, you can replay from the stream (up to 7-day retention). This is also the trigger for graph construction: each transaction event becomes a Neptune edge via the downstream Lambda.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-ingest">Ingestion</span></div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fff3e0; color:#b45309;"><i class="fa-solid fa-bolt"></i></div>
+      <div>
+        <div class="svc-name">AWS Lambda — Graph Event Processor</div>
+        <div class="svc-tier">Kinesis consumer · graph construction</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Consumes from Kinesis, transforms each raw transaction into a graph event (node lookups, edge feature encoding via <code>PRAGMATimeEncoder</code>), and writes to Neptune. Stateless and serverless — cost-proportional to volume, scales to zero between bursts. Each Lambda invocation processes a Kinesis shard batch; parallelism is controlled by the shard count.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-ingest">Ingestion</span><span class="layer-tag t-graph">Graph</span></div>
+  </div>
+
+</div>
+
+<!-- ===== LAYER 2: GRAPH STORE ===== -->
+<div class="section-header"><i class="fa-solid fa-diagram-project"></i> Layer 2 — Graph Store</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8fef0; color:#0a7c3e;"><i class="fa-solid fa-sitemap"></i></div>
+      <div>
+        <div class="svc-name">Amazon Neptune (database)</div>
+        <div class="svc-tier">Persistent property graph · Gremlin API</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Authoritative store for the full transaction graph — cardholders, merchants, devices, account-change events as property graph nodes and timestamped directed edges. Neptune is chosen over a relational DB because it natively handles <strong>multi-hop Gremlin traversals</strong> needed by TGN-SEAL (k=2 hop subgraph extraction) and ETGAT (fund-flow chain queries). At inference, only the ~3% of flagged transactions trigger Neptune subgraph extraction — the fast path uses Redis instead.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-graph">Graph</span><span class="layer-tag t-infer">Inference (Pass 2)</span></div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8f0fe; color:#1a56db;"><i class="fa-solid fa-chart-network"></i></div>
+      <div>
+        <div class="svc-name">Amazon Neptune Analytics</div>
+        <div class="svc-tier">In-memory analytics · vector search</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Separate from Neptune DB — optimised for analytical queries on the full graph. Powers <strong>community detection</strong> (surfaces fraud rings automatically), <strong>vector similarity search</strong> on TGN embeddings ("find transactions similar to this flagged one"), and interactive GraphStorm notebook workflows for analysts. Neptune Analytics runs the graph analytics layer; Neptune DB handles the OLTP write path. Used offline (not on the scoring hot path).
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-graph">Graph</span><span class="layer-tag t-analyst">Analyst Tooling</span></div>
+  </div>
+
+</div>
+
+<!-- ===== LAYER 3: MEMORY STORE ===== -->
+<div class="section-header"><i class="fa-solid fa-memory"></i> Layer 3 — Node Memory Store (TGN per-entity state)</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fff3e0; color:#92400e;"><i class="fa-solid fa-database"></i></div>
+      <div>
+        <div class="svc-name">Amazon ElastiCache for Redis (Valkey)</div>
+        <div class="svc-tier">TGN memory + batch embeddings · &lt;2ms lookup</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> The BRIGHT Lambda architecture (eBay, CIKM 2022) separates expensive multi-hop computation (batch, hourly) from real-time scoring (sub-2ms lookup). Redis stores two data types: <strong>TGN memory vectors</strong> <code>s_i(t)</code> (128-dim, updated after each transaction, TTL=90 days inactivity) and <strong>hourly batch embeddings</strong> from full neighbourhood aggregation (TTL=2h). Neptune P99 Gremlin latency is 50–200ms — Redis is what keeps the fast path under 20ms for 50M+ active entities.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-memory">Memory</span><span class="layer-tag t-infer">Inference</span></div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#f3e8ff; color:#6d28d9;"><i class="fa-solid fa-table-columns"></i></div>
+      <div>
+        <div class="svc-name">Amazon SageMaker Feature Store</div>
+        <div class="svc-tier">Profile features + velocity + drift stats · &lt;10ms online</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Stores three categories: (1) <strong>Node profile features</strong> for <code>ProfileStateEncoder</code> — account age, balance quantile, spending limit (inputs to the PRAGMA-inspired static branch); (2) <strong>rolling velocity counts</strong> at 5min/1hr/24hr; (3) <strong>deviation reference stats</strong> — rolling mean/std of anomaly scores per card for the TFLAG two-hurdle filter. Keeping these in Feature Store (vs. Redis) provides offline/online parity for training — a common source of AUC degradation without it.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-memory">Memory</span><span class="layer-tag t-train">Training</span></div>
+  </div>
+
+</div>
+
+<!-- ===== LAYER 4: INFERENCE ===== -->
+<div class="section-header"><i class="fa-solid fa-microchip"></i> Layer 4 — ML Inference (Two-Pass)</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8f4fd; color:#0066cc;"><i class="fa-solid fa-bolt"></i></div>
+      <div>
+        <div class="svc-name">SageMaker Real-Time — TGN Fast Path</div>
+        <div class="svc-tier">ml.g4dn.2xlarge × 3 · Pass 1 · 100% of transactions</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Hosts the Pass 1 pipeline: retrieve embeddings from Redis → run <code>PRAGMATimeEncoder</code> delta → <code>GraphAttentionEmbedding</code> → <code>RFScoringHead</code>. GPU is needed for the attention computation even at inference. Three instances provide HA across 3 AZs. <strong>Pass 1 approves ~97% of transactions</strong> at ~20ms without any Neptune graph traversal. Score &lt;0.3 → approve; score ≥0.3 → route to Pass 2.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-infer">Inference Pass 1</span></div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#f3e8ff; color:#6d28d9;"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
+      <div>
+        <div class="svc-name">SageMaker Real-Time — TGN-SEAL Structural</div>
+        <div class="svc-tier">ml.g4dn.xlarge × 2 · Pass 2 · ~3% of transactions</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> For flagged transactions, extracts the k=2 enclosing subgraph from Neptune, assigns <strong>DRNL structural labels</strong> (dist_to_card, dist_to_merchant per node), concatenates with TGN embeddings, and classifies via DGCNN. Detects bridge edges, triangle closure with fraud clusters, and novel card–merchant structural positions. Separate endpoint prevents SEAL from consuming fast-path GPU capacity — it only sees 3% of volume, so smaller instances suffice.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-infer">Inference Pass 2</span><span class="layer-tag t-graph">Graph</span></div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8fef0; color:#0a7c3e;"><i class="fa-solid fa-layer-group"></i></div>
+      <div>
+        <div class="svc-name">SageMaker Batch Transform — Batch Embedder</div>
+        <div class="svc-tier">ml.g4dn.12xlarge · hourly · BRIGHT Lambda batch layer</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> The "batch layer" of the BRIGHT Lambda architecture. Runs hourly: takes all transactions from the last hour, runs full multi-hop TGN neighbourhood aggregation (expensive — traverses up to k=2 hops in Neptune), writes updated embeddings to ElastiCache. This is what makes real-time Pass 1 feasible — the expensive work is done offline, real-time scoring retrieves the result instantly. Triggered by EventBridge cron.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-infer">Batch Embeddings</span><span class="layer-tag t-memory">Memory</span></div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fce8f3; color:#9c1c64;"><i class="fa-solid fa-code-branch"></i></div>
+      <div>
+        <div class="svc-name">AWS Lambda — Scoring Orchestrator</div>
+        <div class="svc-tier">API Gateway backend · two-pass routing</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Thin orchestration between API Gateway and the ML endpoints: (1) retrieve embeddings from Redis (~2ms), (2) retrieve profile features from Feature Store (~8ms), (3) invoke TGN Fast Path (~20ms), (4) apply TFLAG two-hurdle deviation filter, (5) if score ≥0.3, invoke SEAL endpoint (+50ms), (6) apply LightGBM meta-learner fusion, (7) return risk tier + explanation signals. Decouples routing logic from ML models — scoring logic updates without redeploying models.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-infer">Orchestration</span><span class="layer-tag t-api">API</span></div>
+  </div>
+
+</div>
+
+<!-- ===== LAYER 5: TRAINING ===== -->
+<div class="section-header"><i class="fa-solid fa-graduation-cap"></i> Layer 5 — Training & Model Management</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#dbeafe; color:#1e40af;"><i class="fa-solid fa-dumbbell"></i></div>
+      <div>
+        <div class="svc-name">Amazon SageMaker Training Jobs</div>
+        <div class="svc-tier">ml.g4dn.12xlarge · weekly fine-tune + monthly full retrain</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Two cadences: <strong>Weekly fine-tune</strong> (~8h) updates TGN weights on recent labelled transactions (confirmed chargebacks), preserving the pre-trained backbone via LoRA — keeping drift-aligned without catastrophic forgetting. <strong>Monthly full retrain</strong> (~48h) rebuilds the full ensemble: TGN + RF head + LightGBM meta-learner + drift autoencoder. GraphSMOTE with k-hop topology preservation is applied during training to address &lt;2% fraud rate class imbalance without disrupting temporal ordering.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-train">Training</span></div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e0f0ff; color:#1e40af;"><i class="fa-solid fa-sitemap"></i></div>
+      <div>
+        <div class="svc-name">Amazon SageMaker Pipelines</div>
+        <div class="svc-tier">MLOps orchestration · weekly trigger</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Orchestrates the full MLOps workflow: data prep → graph construction → TGN training → RF head fitting → meta-learner training → validation → endpoint update. The pipeline enforces a quality gate: AUPRC must be ≥ the current production version before an endpoint update is allowed. Triggered weekly by EventBridge. Provides full lineage tracking, reproducible runs, and integration with Model Registry.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-train">Training</span></div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8fef8; color:#0a7c5e;"><i class="fa-solid fa-code-compare"></i></div>
+      <div>
+        <div class="svc-name">Amazon SageMaker Model Registry</div>
+        <div class="svc-tier">Versioned model store · approval gate</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Every trained model registered with: training metrics (AUPRC, F1, FP rate per fraud pattern), training data hash for reproducibility, and an approval gate requiring human review before production promotion. Prevents silent model degradation — the comparison is always against the live endpoint, not just an absolute threshold. Also stores per-segment evaluation results (AUPRC separately for card-testing, AML, bust-out) to catch pattern-specific regressions.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-train">Training</span></div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fff3e0; color:#b45309;"><i class="fa-solid fa-shuffle"></i></div>
+      <div>
+        <div class="svc-name">AWS Glue ETL</div>
+        <div class="svc-tier">Tabular → graph transformation · nightly</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Transforms raw transaction records (tabular, in S3) into the heterogeneous graph format Neptune requires (CSV with node/edge files). Runs nightly. Critically, also builds training datasets with <strong>strict chronological 70/15/15 splits</strong> — no random shuffle. Random splits cause up to 39.5 F1-point inflation on the Elliptic benchmark (confirmed in research). Glue enforces temporal ordering as a pipeline constraint, not an afterthought.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-train">Training</span><span class="layer-tag t-graph">Graph</span></div>
+  </div>
+
+</div>
+
+<!-- ===== LAYER 6: DRIFT ===== -->
+<div class="section-header"><i class="fa-solid fa-wave-square"></i> Layer 6 — Drift Detection & Adaptive Maintenance</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fce8f3; color:#9c1c64;"><i class="fa-solid fa-chart-area"></i></div>
+      <div>
+        <div class="svc-name">CloudWatch + SageMaker Model Monitor</div>
+        <div class="svc-tier">Embedding drift · metric monitoring · latency</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Two-track monitoring: (1) <strong>Metric monitoring</strong> — rolling AUPRC on labelled feedback (chargebacks 30–90 days post-transaction), endpoint P99 latency, ElastiCache hit rate; (2) <strong>Latent-space drift</strong> (TGNN-CDD pattern) — autoencoder trained on normal TGN embeddings, reconstruction error monitored via CUSUM. Latent-space drift catches structural and relational drift (new fraud topology, new entity relationships) that raw feature monitoring misses, because it monitors the model's internal representation of normality.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-drift">Drift</span></div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8fef8; color:#0a7c5e;"><i class="fa-solid fa-calendar-check"></i></div>
+      <div>
+        <div class="svc-name">Amazon EventBridge</div>
+        <div class="svc-tier">Drift triggers · scheduled jobs · pipeline orchestration</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Event-driven automation for three triggers: (1) <code>CloudWatch alarm (AUPRC drop &gt;5%)</code> → SageMaker Pipeline (retrain); (2) <code>Cron (hourly)</code> → Batch Transform (embedding refresh); (3) <code>Cron (daily)</code> → Glue ETL (feature store update). EventBridge decouples monitoring from action — the retrain trigger fires only when needed (not on a fixed weekly schedule regardless of drift), reducing unnecessary compute.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-drift">Drift</span><span class="layer-tag t-train">Training</span></div>
+  </div>
+
+</div>
+
+<!-- ===== LAYER 7: API ===== -->
+<div class="section-header"><i class="fa-solid fa-plug"></i> Layer 7 — API & Integration</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8fef8; color:#0a7c5e;"><i class="fa-solid fa-globe"></i></div>
+      <div>
+        <div class="svc-name">Amazon API Gateway (HTTP API)</div>
+        <div class="svc-tier">Core banking interface · IAM auth · throttling</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Exposes two routes to core banking: <code>POST /score</code> (sync, &lt;100ms P99 via Lambda → Redis + SageMaker) and <code>POST /score/batch</code> (async, via Batch Transform for post-transaction AML review). HTTP API variant is chosen over REST API for lower latency (~1ms vs ~6ms per request overhead). Provides IAM/Cognito auth, per-route throttling to protect SageMaker endpoints, and request logging. Canary deployments for model version rollouts.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-api">API</span></div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8f4fd; color:#0066cc;"><i class="fa-solid fa-box-archive"></i></div>
+      <div>
+        <div class="svc-name">Amazon S3</div>
+        <div class="svc-tier">Raw data · model artifacts · graph snapshots</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Central durable store for raw transaction history, training datasets (chronologically split by Glue), graph snapshots (Neptune export), and model artifacts (SageMaker Model Registry). Three-tier lifecycle: S3 Standard (0–90 days, hot), S3-IA (90–365 days, warm), Glacier (365+ days, cold). The training pipeline reads exclusively from S3 to ensure full reproducibility — no live database queries during training.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-train">Training</span><span class="layer-tag t-drift">Drift</span></div>
+  </div>
+
+</div>
+
+<!-- ===== LAYER 8: ANALYST ===== -->
+<div class="section-header"><i class="fa-solid fa-user-shield"></i> Layer 8 — Fraud Analyst Tooling</div>
+<div class="services-grid">
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#fff8e1; color:#b45309;"><i class="fa-solid fa-chart-bar"></i></div>
+      <div>
+        <div class="svc-name">Amazon QuickSight (or CloudFront + AppSync)</div>
+        <div class="svc-tier">Fraud analyst dashboard · fraud ring visualisation</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Business dashboard for fraud analysts: real-time flagged transaction feed with risk tier and explanation signals, historical fraud pattern trends by type/segment/time-of-day, graph visualisation of detected fraud rings (from Neptune Analytics community detection), and "find similar" via TGN embedding vector similarity search. QuickSight for standard reporting; custom React app on CloudFront + AppSync for interactive graph views with Neptune Analytics.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-analyst">Analyst</span></div>
+  </div>
+
+  <div class="service-card">
+    <div class="svc-header">
+      <div class="svc-icon" style="background:#e8fef0; color:#0a7c3e;"><i class="fa-solid fa-file-lines"></i></div>
+      <div>
+        <div class="svc-name">Amazon DocumentDB</div>
+        <div class="svc-tier">Fraud case records · feedback loop</div>
+      </div>
+    </div>
+    <div class="svc-why">
+      <strong>Why needed:</strong> Stores enriched fraud case records — flagged transactions with analyst notes, resolution status, chargeback outcomes. <strong>Closes the feedback loop</strong>: confirmed fraud from DocumentDB becomes a training label in the weekly fine-tune pipeline. This is the only path for supervised labels to re-enter the model — without it, the TGN would drift toward unsupervised operation as fraud patterns evolve. DocumentDB's flexible schema accommodates the heterogeneous case metadata per fraud type.
+    </div>
+    <div class="layer-tags"><span class="layer-tag t-analyst">Analyst</span><span class="layer-tag t-train">Training Feedback</span></div>
+  </div>
+
+</div>
+
+<!-- ===== COST TABLE ===== -->
+<div class="section-header"><i class="fa-solid fa-coins"></i> Cost Estimate — eu-west-1, On-Demand</div>
+<table class="cost-table">
+  <thead>
+    <tr><th>Component</th><th>Service &amp; Config</th><th>Est. Monthly</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Transaction ingestion</td><td>Kinesis On-Demand (1K TPS avg)</td><td>~$300</td></tr>
+    <tr><td>Node memory store</td><td>ElastiCache Redis 200GB, r7g.xlarge</td><td>~$900</td></tr>
+    <tr><td>TGN Fast Path inference</td><td>SageMaker ml.g4dn.2xlarge × 3, 24/7</td><td>~$2,500</td></tr>
+    <tr><td>SEAL structural inference</td><td>SageMaker ml.g4dn.xlarge × 2, 24/7</td><td>~$1,200</td></tr>
+    <tr><td>Batch embedder (hourly)</td><td>SageMaker Batch Transform, ml.g4dn.12xlarge</td><td>~$700</td></tr>
+    <tr><td>Graph store</td><td>Neptune db.r6g.2xlarge × 3, 2TB storage</td><td>~$1,700</td></tr>
+    <tr><td>Feature store</td><td>SageMaker Feature Store, 5TB offline</td><td>~$1,500</td></tr>
+    <tr><td>Observability</td><td>CloudWatch + Model Monitor</td><td>~$200</td></tr>
+    <tr class="cost-total"><td colspan="2"><strong>Total (On-Demand)</strong></td><td><strong>~$9,000/month</strong></td></tr>
+  </tbody>
+</table>
+<p style="font-size:11px; color:var(--color-text-muted,#888); margin-top:6px;">
+  With 1-year Reserved Instances on compute (SageMaker + ElastiCache + Neptune): ~$5,500/month (~$66K/year).
+  <a href="https://calculator.aws/#/estimate?id=f74396b7e9337634ecd19c93cb2f5ecdfbc9462f" style="color:var(--color-primary,#0052cc);">Live AWS Pricing Calculator estimate →</a>
+</p>
+
+<!-- ===== DESIGN DECISIONS ===== -->
+<div class="section-header"><i class="fa-solid fa-lightbulb"></i> Key Design Decisions</div>
+
+<div class="decision-box">
+  <strong>Neptune + ElastiCache (not just Neptune)</strong><br>
+  Neptune is the authoritative graph store but P99 Gremlin latency is 50–200ms at inference scale — too slow for the fast path. ElastiCache gives sub-2ms for the 97% of transactions that don't need live graph traversal. The Lambda architecture pattern (BRIGHT, eBay, CIKM 2022) separates batch pre-computation from real-time lookup: Neptune does the rich multi-hop work offline, Redis serves the result instantly.
+</div>
+
+<div class="decision-box">
+  <strong>Two SageMaker endpoints (not one)</strong><br>
+  Collocating TGN-SEAL with the fast-path TGN would waste GPU capacity on the 97% of transactions that never need structural enrichment. Separate endpoints allow independent auto-scaling: fast-path handles full TPS, SEAL runs on smaller instances since it sees only ~3% of volume. The two-pass architecture (Pass 1: always; Pass 2: flagged only) is what makes sub-100ms P99 achievable at 10K TPS.
+</div>
+
+<div class="decision-box">
+  <strong>SageMaker Feature Store (not just Redis)</strong><br>
+  Redis stores dynamic embeddings updated per transaction. Feature Store stores slower-changing profile features (account age, balance quantile — inputs to <code>ProfileStateEncoder</code>) and the rolling statistics for the TFLAG two-hurdle filter. Keeping them separate maintains Redis leanness and provides offline/online feature parity for training — a common source of silent AUC degradation in production GNN systems when training and serving use different feature pipelines.
+</div>
+
+<div class="decision-box">
+  <strong>Chronological data splits enforced by Glue (not random)</strong><br>
+  Research on the Elliptic Bitcoin dataset shows random train/test splits inflate GNN performance by up to <strong>39.5 F1 points</strong> vs. a leakage-free chronological split. AWS Glue enforces 70/15/15 chronological ordering as a pipeline constraint. The SageMaker Pipeline quality gate compares AUPRC on the chronological holdout — never on a random split — preventing silent model overestimation from entering production.
+</div>
+
+<!-- ===== RESEARCH FOUNDATIONS ===== -->
+<div class="section-header"><i class="fa-solid fa-book-open"></i> Research Foundations</div>
+<table class="research-table">
+  <thead><tr><th>Architectural Pattern</th><th>Source Paper</th><th>Confidence</th></tr></thead>
+  <tbody>
+    <tr><td>Lambda inference (batch + RT)</td><td>BRIGHT — Lu et al., eBay, <em>CIKM 2022</em></td><td><span class="badge-prod">✓ Production (eBay)</span></td></tr>
+    <tr><td>Two-hurdle FP filter</td><td>TFLAG — Jiang et al., <em>arXiv:2501.06997</em>, 2025</td><td><span class="badge-prod">✓ P=1.0 DARPA E3</span></td></tr>
+    <tr><td>TGN-SEAL structural enrichment</td><td>Sajadi et al., <em>EPJ Data Science</em>, 2026</td><td><span class="badge-cred">✓ Credible</span></td></tr>
+    <tr><td>PRAGMA time encoding</td><td>Revolut PRAGMA — <em>arXiv:2604.08649</em>, 2026</td><td><span class="badge-prod">✓ Production (26M users, 24B events)</span></td></tr>
+    <tr><td>Profile state encoder</td><td>Revolut PRAGMA — <em>arXiv:2604.08649</em>, 2026</td><td><span class="badge-prod">✓ +2.1% AUC ablation</span></td></tr>
+    <tr><td>GraphSMOTE training oversampling</td><td>THG-OAFN — Wei &amp; Lee, <em>PLoS ONE</em>, 2025</td><td><span class="badge-cred">✓ Credible, code on GitHub</span></td></tr>
+    <tr><td>Buyer/seller subgraph modules</td><td>C2GAT — Chen &amp; Yang, Ant Group, <em>Front. AI</em>, 2026</td><td><span class="badge-prod">✓ Production (Ant Credit)</span></td></tr>
+    <tr><td>Latent-space drift detection</td><td>TGNN-CDD pattern, Stanford/UCL architecture</td><td><span class="badge-cred">✓ Architecture credible</span></td></tr>
+    <tr><td>TGN backbone</td><td>Rossi et al., <em>ICML 2020</em></td><td><span class="badge-prod">✓ Foundational (widely deployed)</span></td></tr>
+    <tr><td>Temporal motif features</td><td>ATM-GAD — Zhang et al., Renmin Univ., 2025</td><td><span class="badge-cred">✓ Best AUPRC on 8 datasets</span></td></tr>
+  </tbody>
+</table>
+
+<p style="font-size:11px; color:var(--color-text-muted,#888); margin-top:20px;">
+  Architecture v1.0 — June 2026 · Companion documents: ENSEMBLE_DESIGN.md · DEMO_READINESS.md · KIRO.md
+</p>
+
+</body>
+</html>
